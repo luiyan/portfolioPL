@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Portfolio">
+<title>Mi Portfolio</title>
+<style>
+:root {
+  --bg: #0c1221; --bg2: #131b2e; --bg3: #1a2540;
+  --border: #1e293b; --border2: #253553;
+  --text: #e2e8f0; --text2: #94a3b8; --text3: #475569;
+  --accent: #3b82f6; --accent2: #60a5fa;
+  --green: #10b981; --green-bg: rgba(16,185,129,0.1);
+  --red: #ef4444; --red-bg: rgba(239,68,68,0.1);
+  --radius: 10px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+body {
+  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100vh; overflow-x: hidden;
+  padding-top: var(--safe-top);
+  padding-bottom: calc(60px + var(--safe-bottom));
+}
+
+/* NAV */
+.nav {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--bg2); border-top: 1px solid var(--border);
+  display: flex; z-index: 90; padding-bottom: var(--safe-bottom);
+}
+.nav-btn {
+  flex: 1; padding: 8px 0 5px; background: none; border: none;
+  color: var(--text3); font-size: 10px; font-weight: 600;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  cursor: pointer;
+}
+.nav-btn.active { color: var(--accent2); }
+.nav-btn svg { width: 20px; height: 20px; }
+
+/* PAGES */
+.page { display: none; padding: 16px; max-width: 640px; margin: 0 auto; }
+.page.active { display: block; }
+
+/* TYPOGRAPHY */
+h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; color: #f1f5f9; }
+h2 { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+.subtitle { font-size: 12px; color: var(--text3); margin-top: 2px; margin-bottom: 16px; }
+.section-title { font-size: 11px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.8px; margin: 18px 0 8px; }
+
+/* SUMMARY CARDS */
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.card {
+  background: var(--bg2); border-radius: var(--radius); padding: 12px 14px;
+  border-left: 3px solid var(--border);
+}
+.card-l { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.card-v { font-size: 16px; font-weight: 700; color: #e2e8f0; margin-top: 2px; display: block; }
+.card-v.sm { font-size: 14px; }
+
+/* FILTERS */
+.filts { display: flex; gap: 5px; margin-bottom: 14px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+.filt {
+  padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 500;
+  border: 1px solid var(--border); background: var(--bg2); color: var(--text2);
+  cursor: pointer; white-space: nowrap; flex-shrink: 0;
+}
+.filt.on { color: #fff; border-color: transparent; font-weight: 600; }
+
+/* POSITION LIST */
+.positions { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.pos-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px; display: flex; align-items: center; gap: 10px; cursor: pointer;
+}
+.pos-card:active { background: var(--bg3); }
+.pos-info { flex: 1; min-width: 0; }
+.pos-name { font-size: 14px; font-weight: 600; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pos-isin { font-size: 11px; color: var(--accent2); font-family: 'SF Mono', monospace; margin-top: 1px; }
+.pos-meta { font-size: 10px; color: var(--text3); margin-top: 2px; display: flex; gap: 6px; flex-wrap: wrap; }
+.pos-values { text-align: right; flex-shrink: 0; }
+.pos-current { font-size: 15px; font-weight: 700; }
+.pos-pnl { font-size: 11px; font-weight: 600; margin-top: 1px; }
+.up { color: var(--green); }
+.down { color: var(--red); }
+
+.layer-dot { width: 4px; height: 32px; border-radius: 2px; flex-shrink: 0; }
+.type-tag {
+  font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+  text-transform: uppercase; letter-spacing: 0.3px; flex-shrink: 0;
+}
+.tx-count { font-size: 9px; color: var(--text3); background: var(--bg3); padding: 1px 5px; border-radius: 3px; }
+
+/* BADGES */
+.badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+.badge-m { background: #172554; color: #60a5fa; }
+.badge-s { background: #172554; color: #60a5fa; }
+.badge-p { background: #2e1065; color: #c084fc; }
+.badge-n { background: var(--border); color: var(--text3); }
+
+/* EMPTY */
+.empty {
+  text-align: center; padding: 50px 20px;
+  background: var(--bg2); border: 1px dashed var(--border2); border-radius: 14px;
+}
+
+/* FORMS */
+.form-group { margin-bottom: 12px; }
+.form-label { font-size: 11px; color: var(--text3); font-weight: 600; margin-bottom: 5px; display: block; text-transform: uppercase; letter-spacing: 0.4px; }
+.form-input {
+  width: 100%; padding: 10px 12px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg);
+  color: var(--text); font-size: 15px; outline: none; font-family: inherit;
+}
+.form-input:focus { border-color: var(--accent); }
+.form-input::placeholder { color: var(--text3); }
+.form-input.mono { font-family: 'SF Mono', monospace; letter-spacing: 0.04em; text-transform: uppercase; }
+select.form-input { appearance: auto; }
+.form-row { display: flex; gap: 10px; }
+.form-row > * { flex: 1; }
+
+.form-toggle { display: flex; gap: 6px; }
+.tog-btn {
+  flex: 1; padding: 9px; text-align: center; font-size: 13px; font-weight: 600;
+  border-radius: 8px; cursor: pointer; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text3);
+}
+.tog-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.btn {
+  width: 100%; padding: 12px; border-radius: var(--radius); border: none;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.btn:active { opacity: 0.85; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-secondary { background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
+.btn-danger { background: var(--red-bg); color: var(--red); border: 1px solid rgba(239,68,68,0.15); }
+.btn + .btn { margin-top: 8px; }
+
+/* DETAIL */
+.detail-back { background: none; border: none; color: var(--accent2); font-size: 14px; font-weight: 600; cursor: pointer; padding: 4px 0; }
+.detail-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.detail-actions button {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text2); font-size: 11px; padding: 6px 10px; cursor: pointer; font-weight: 600;
+}
+.tx-list { display: flex; flex-direction: column; gap: 6px; }
+.tx-item {
+  background: var(--bg3); border-radius: 8px; padding: 10px 12px;
+  display: flex; align-items: center; gap: 8px; border: 1px solid var(--border);
+}
+.tx-left { flex: 1; min-width: 0; }
+.tx-type-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; }
+.tx-type-tag.buy { background: var(--green-bg); color: var(--green); }
+.tx-type-tag.sell { background: var(--red-bg); color: var(--red); }
+.tx-right { text-align: right; flex-shrink: 0; }
+.tx-actions { display: flex; gap: 4px; margin-left: 8px; flex-direction: column; flex-shrink: 0; }
+.tx-act-btn { background: var(--bg2); border: 1px solid var(--border); color: var(--text2); font-size: 11px; font-weight: 600; cursor: pointer; padding: 6px 10px; border-radius: 6px; min-height: 32px; }
+.tx-act-btn.del { color: var(--red); border-color: rgba(239,68,68,0.2); }
+
+/* MODAL */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100;
+  display: none; align-items: flex-end; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--bg2); border-radius: 16px 16px 0 0; padding: 20px;
+  width: 100%; max-width: 600px; max-height: 85vh; overflow-y: auto;
+  padding-bottom: calc(20px + var(--safe-bottom));
+}
+.modal h3 { font-size: 17px; font-weight: 700; margin-bottom: 14px; }
+
+/* DATA */
+.data-section {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px; margin-bottom: 10px;
+}
+.data-section h3 { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+.data-section p { font-size: 12px; color: var(--text3); margin-bottom: 10px; }
+.file-input-wrapper { position: relative; overflow: hidden; display: inline-block; width: 100%; }
+.file-input-wrapper input[type=file] { position: absolute; left: 0; top: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+
+/* TOAST */
+.toast {
+  position: fixed; top: 50px; left: 16px; right: 16px; max-width: 500px; margin: 0 auto;
+  background: var(--green); color: #000; padding: 10px 14px; border-radius: 8px;
+  text-align: center; font-weight: 600; font-size: 13px; z-index: 200;
+  opacity: 0; transition: opacity 0.3s; pointer-events: none;
+}
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- PORTFOLIO PAGE -->
+<div class="page active" id="page-portfolio">
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:4px">
+    <h1>Mi Portfolio</h1>
+  </div>
+  <p class="subtitle" id="port-subtitle"></p>
+  <div class="cards" id="port-cards"></div>
+  <div class="filts" id="port-filters"></div>
+  <div id="port-list"></div>
+</div>
+
+<!-- ADD PAGE -->
+<div class="page" id="page-add">
+  <h2 id="form-title">Nueva transacción</h2>
+  <div id="form-content"></div>
+</div>
+
+<!-- DETAIL PAGE -->
+<div class="page" id="page-detail">
+  <div id="detail-content"></div>
+</div>
+
+<!-- DATA PAGE -->
+<div class="page" id="page-data">
+  <h2>Datos / Data</h2>
+  <div class="data-section">
+    <h3>Exportar</h3>
+    <p>Descarga todas las transacciones</p>
+    <button class="btn btn-secondary" onclick="doExport('json')" style="margin-bottom:6px">Exportar JSON</button>
+    <button class="btn btn-secondary" onclick="doExport('csv')">Exportar CSV</button>
+  </div>
+  <div class="data-section">
+    <h3>Importar transacciones</h3>
+    <p>Carga un JSON de transacciones (añadir o reemplazar)</p>
+    <div class="file-input-wrapper">
+      <button class="btn btn-secondary">Seleccionar archivo JSON</button>
+      <input type="file" accept=".json" onchange="doImport(event)">
+    </div>
+  </div>
+  <div class="data-section">
+    <h3>Actualizar precios</h3>
+    <p>Carga un JSON con precios actuales por ISIN/Ticker:<br>
+    <code style="font-size:11px;color:var(--accent2)">{ "IE00B3WJKG14": 33.43, "BTC": 62000 }</code></p>
+    <div class="file-input-wrapper">
+      <button class="btn btn-secondary">Seleccionar JSON de precios</button>
+      <input type="file" accept=".json" onchange="doImportPrices(event)">
+    </div>
+  </div>
+  <div class="data-section">
+    <h3>Info</h3>
+    <p id="data-info"></p>
+  </div>
+  <div class="data-section" style="margin-top:16px">
+    <button class="btn btn-danger" id="btn-clear-all" onclick="clearAllData()">Borrar todos los datos</button>
+  </div>
+</div>
+
+<!-- MODAL: Update value -->
+<div class="modal-overlay" id="modal-value">
+  <div class="modal">
+    <h3>Actualizar precio actual</h3>
+    <div class="form-group">
+      <label class="form-label">Precio actual por unidad (€)</label>
+      <input class="form-input" id="edit-price" type="number" step="0.01">
+    </div>
+    <button class="btn btn-primary" onclick="saveGroupPrice()">Actualizar</button>
+    <button class="btn btn-secondary" onclick="closeModal('modal-value')">Cancelar</button>
+  </div>
+</div>
+
+<!-- MODAL: Update TER -->
+<div class="modal-overlay" id="modal-ter">
+  <div class="modal">
+    <h3>Actualizar TER / Coste anual</h3>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:12px">Se aplicará a todas las transacciones de este producto</p>
+    <div class="form-group">
+      <label class="form-label">Coste anual (%) — TER</label>
+      <input class="form-input" id="edit-ter" type="number" step="0.01">
+    </div>
+    <button class="btn btn-primary" onclick="saveGroupTer()">Actualizar</button>
+    <button class="btn btn-secondary" onclick="closeModal('modal-ter')">Cancelar</button>
+  </div>
+</div>
+
+<!-- MODAL: Import mode -->
+<div class="modal-overlay" id="modal-import">
+  <div class="modal">
+    <h3>Importar datos</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:6px" id="import-info"></p>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:16px">¿Qué quieres hacer con los datos existentes?</p>
+    <button class="btn btn-primary" onclick="execImport('merge')">Añadir a los existentes</button>
+    <button class="btn btn-secondary" onclick="execImport('replace')">Reemplazar todo</button>
+    <button class="btn btn-secondary" onclick="closeModal('modal-import')">Cancelar</button>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav class="nav">
+  <button class="nav-btn active" onclick="goTo('portfolio')" data-page="portfolio">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+    Portfolio
+  </button>
+  <button class="nav-btn" onclick="goTo('add')" data-page="add">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+    Añadir
+  </button>
+  <button class="nav-btn" onclick="goTo('data')" data-page="data">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+    Datos
+  </button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===== CONSTANTS ===== */
+const BROKERS = [
+  { id:"trade_republic", label:"Trade Republic", color:"#1A1A1A" },
+  { id:"n26", label:"N26", color:"#36A18B" },
+  { id:"allianz", label:"Allianz", color:"#0038A8" },
+  { id:"etoro", label:"eToro", color:"#69C53E" },
+  { id:"degiro", label:"DEGIRO", color:"#0078E7" },
+  { id:"scalable", label:"Scalable Capital", color:"#FF5733" },
+  { id:"interactive_brokers", label:"Interactive Brokers", color:"#D4001A" },
+  { id:"revolut", label:"Revolut", color:"#6C63FF" },
+  { id:"coinbase", label:"Coinbase", color:"#0052FF" },
+  { id:"xtb", label:"XTB", color:"#00A651" },
+  { id:"otro", label:"Otro", color:"#6B7280" }
+];
+const CONTRIBS = [
+  { id:"mensual", label:"Mensual" },
+  { id:"sparplan", label:"Sparplan" },
+  { id:"puntual", label:"Puntual" },
+  { id:"ninguno", label:"Sin aporte" }
+];
+const TYPES = [
+  { id:"ETF", label:"ETF" },
+  { id:"Stock", label:"Acción" },
+  { id:"Bond", label:"Bono" },
+  { id:"Fund", label:"Fondo" },
+  { id:"Crypto", label:"Crypto" },
+  { id:"Other", label:"Otro" }
+];
+const SECTORS = [
+  { id:"global", label:"Global / Diversificado" },
+  { id:"technology", label:"Technology" },
+  { id:"healthcare", label:"Healthcare" },
+  { id:"financials", label:"Financials" },
+  { id:"consumer_disc", label:"Consumer Discretionary" },
+  { id:"consumer_staples", label:"Consumer Staples" },
+  { id:"industrials", label:"Industrials" },
+  { id:"energy", label:"Energy" },
+  { id:"materials", label:"Materials" },
+  { id:"utilities", label:"Utilities" },
+  { id:"real_estate", label:"Real Estate" },
+  { id:"communication", label:"Communication Services" },
+  { id:"fixed_income", label:"Fixed Income / Renta Fija" },
+  { id:"commodities", label:"Commodities / Materias Primas" },
+  { id:"crypto", label:"Crypto / Digital Assets" },
+  { id:"multi_sector", label:"Multi-sector / Mixto" },
+  { id:"otro_sector", label:"Otro" }
+];
+const ISSUERS = [
+  { id:"ishares", label:"iShares (BlackRock)" },
+  { id:"xtrackers", label:"Xtrackers (DWS)" },
+  { id:"amundi", label:"Amundi" },
+  { id:"spdr", label:"SPDR (State Street)" },
+  { id:"vaneck", label:"VanEck" },
+  { id:"vanguard", label:"Vanguard" },
+  { id:"invesco", label:"Invesco" },
+  { id:"wisdomtree", label:"WisdomTree" },
+  { id:"lyxor", label:"Lyxor" },
+  { id:"hsbc", label:"HSBC" },
+  { id:"ubs", label:"UBS" },
+  { id:"na", label:"N/A (Acción / Crypto)" },
+  { id:"otro_issuer", label:"Otro" }
+];
+
+const STORE_KEY = 'portfolio-v3';
+let txs = [];
+let filterBroker = 'all';
+let editingTxId = null;
+let detailIsin = null;
+
+/* ===== HELPERS ===== */
+const today = () => new Date().toISOString().slice(0, 10);
+const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const fmt = n => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(n);
+const fmtN = n => new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(n);
+const esc = s => { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; };
+const getBroker = id => BROKERS.find(b => b.id === id) || BROKERS[BROKERS.length - 1];
+const getContrib = id => CONTRIBS.find(c => c.id === id) || CONTRIBS[3];
+const getSector = id => SECTORS.find(s => s.id === id) || SECTORS[SECTORS.length - 1];
+const getIssuer = id => ISSUERS.find(i => i.id === id) || ISSUERS[ISSUERS.length - 1];
+const typeColors = { ETF: '#3b82f6', Stock: '#fbbf24', Bond: '#10b981', Fund: '#ec4899', Crypto: '#f97316', Other: '#6b7280' };
+
+/* ===== STORAGE ===== */
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(txs)); }
+function init() {
+  txs = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
+  renderPortfolio();
+}
+
+/* ===== NAVIGATION ===== */
+function goTo(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  const nb = document.querySelector('[data-page="' + page + '"]');
+  if (nb) nb.classList.add('active');
+  if (page === 'portfolio') renderPortfolio();
+  if (page === 'add') renderForm();
+  if (page === 'data') updateDataInfo();
+}
+
+/* ===== GROUPING BY ISIN ===== */
+function getGroups() {
+  let filtered = txs;
+  if (filterBroker !== 'all') filtered = filtered.filter(t => t.broker === filterBroker);
+
+  const map = {};
+  filtered.forEach(tx => {
+    const key = tx.isin || tx.id;
+    if (!map[key]) {
+      map[key] = {
+        isin: tx.isin, name: tx.name, type: tx.type,
+        brokers: new Set(), totalCost: 0, totalUnits: 0, currentPrice: 0,
+        contribType: tx.contribType, latestRecurringCost: 0, txs: [], lastDate: ''
+      };
+    }
+    const g = map[key];
+    g.brokers.add(tx.broker);
+    g.txs.push(tx);
+
+    if (tx.txType === 'sell') {
+      g.totalCost -= tx.cost;
+      g.totalUnits -= (tx.units || 0);
+    } else {
+      g.totalCost += tx.cost;
+      g.totalUnits += (tx.units || 0);
+    }
+
+    if (tx.date >= g.lastDate) {
+      g.lastDate = tx.date;
+      g.currentPrice = tx.currentPrice || 0;
+      g.name = tx.name;
+    }
+    if (tx.contribType && tx.contribType !== 'ninguno') {
+      g.contribType = tx.contribType;
+      if ((tx.contribType === 'mensual' || tx.contribType === 'sparplan') && tx.date >= (g._lastRecDate || '')) {
+        g.latestRecurringCost = tx.cost;
+        g._lastRecDate = tx.date;
+      }
+    }
+  });
+
+  return Object.values(map).map(g => {
+    g.avgPrice = g.totalUnits > 0 ? g.totalCost / g.totalUnits : 0;
+    g.currentValue = g.totalUnits * g.currentPrice;
+    g.pnl = g.currentValue - g.totalCost;
+    g.pnlPct = g.totalCost > 0 ? (g.pnl / g.totalCost) * 100 : 0;
+    return g;
+  }).sort((a, b) => b.currentValue - a.currentValue);
+}
+
+/* ===== PORTFOLIO RENDER ===== */
+function renderPortfolio() {
+  const groups = getGroups();
+  const allTxs = filterBroker === 'all' ? txs : txs.filter(t => t.broker === filterBroker);
+
+  const totCost = groups.reduce((s, g) => s + g.totalCost, 0);
+  const totCurrent = groups.reduce((s, g) => s + g.currentValue, 0);
+  const totPnl = totCurrent - totCost;
+  const totPnlPct = totCost > 0 ? (totPnl / totCost) * 100 : 0;
+  const totMonthly = allTxs
+    .filter(t => t.contribType === 'mensual' || t.contribType === 'sparplan')
+    .reduce((s, t) => {
+      // Only count latest per ISIN
+      return s;
+    }, 0);
+  // Recalculate monthly from groups
+  const monthly = groups
+    .filter(g => g.contribType === 'mensual' || g.contribType === 'sparplan')
+    .reduce((s, g) => s + g.latestRecurringCost, 0);
+
+  // Cards
+  document.getElementById('port-cards').innerHTML =
+    '<div class="card"><span class="card-l">Invertido / Invested</span><span class="card-v">' + fmt(totCost) + '</span></div>' +
+    '<div class="card"><span class="card-l">Valor actual / Current</span><span class="card-v">' + fmt(totCurrent) + '</span></div>' +
+    '<div class="card" style="border-left-color:' + (totPnl >= 0 ? 'var(--green)' : 'var(--red)') + '"><span class="card-l">P&L</span><span class="card-v ' + (totPnl >= 0 ? 'up' : 'down') + '">' + (totPnl >= 0 ? '+' : '') + fmt(totPnl) + ' (' + (totPnlPct >= 0 ? '+' : '') + totPnlPct.toFixed(2) + '%)</span></div>' +
+    '<div class="card"><span class="card-l">Recurrente / mes</span><span class="card-v sm">' + fmt(monthly) + '</span></div>';
+
+  // Subtitle
+  document.getElementById('port-subtitle').textContent =
+    groups.length + ' posiciones · ' + txs.length + ' transacciones';
+
+  // Filters - brokers
+  let fh = '<button class="filt' + (filterBroker === 'all' ? ' on' : '') + '" style="' + (filterBroker === 'all' ? 'background:var(--accent)' : '') + '" onclick="setFilter(\'all\')">Todos</button>';
+  const usedBrokers = [...new Set(txs.map(t => t.broker))];
+  usedBrokers.forEach(bid => {
+    const b = getBroker(bid);
+    fh += '<button class="filt' + (filterBroker === bid ? ' on' : '') + '" style="' + (filterBroker === bid ? 'background:' + b.color : '') + '" onclick="setFilter(\'' + bid + '\')">' + b.label + '</button>';
+  });
+  document.getElementById('port-filters').innerHTML = fh;
+
+  // Position list
+  if (groups.length === 0) {
+    document.getElementById('port-list').innerHTML =
+      '<div class="empty"><div style="font-size:36px;margin-bottom:8px">📊</div>' +
+      '<p style="color:#f1f5f9;font-weight:600">Sin posiciones</p>' +
+      '<p style="font-size:12px;color:var(--text3);margin-top:4px">Toca "Añadir" para registrar una inversión</p></div>';
+    return;
+  }
+
+  let html = '<div class="positions">';
+  groups.forEach(g => {
+    const tc = typeColors[g.type] || '#6b7280';
+    const key = g.isin || g.txs[0].id;
+    const contrib = getContrib(g.contribType);
+    const isRec = g.contribType === 'mensual' || g.contribType === 'sparplan';
+    const brokerList = [...g.brokers];
+    const brokerColor = brokerList.length === 1 ? getBroker(brokerList[0]).color : 'var(--accent)';
+
+    html += '<div class="pos-card" onclick="showDetail(\'' + esc(key) + '\')">' +
+      '<div class="layer-dot" style="background:' + brokerColor + '"></div>' +
+      '<div class="pos-info">' +
+        '<div class="pos-name">' + esc(g.name) +
+          (g.txs.length > 1 ? ' <span class="tx-count">' + g.txs.length + '</span>' : '') +
+        '</div>' +
+        (g.isin ? '<div class="pos-isin">' + (g.type === 'Crypto' ? '🪙 ' : '') + esc(g.isin) + '</div>' : '') +
+        '<div class="pos-meta">' +
+          '<span>' + [...g.brokers].map(b => getBroker(b).label).join(', ') + '</span>' +
+          (g.totalUnits ? '<span>' + g.totalUnits.toFixed(6) + ' uds</span>' : '') +
+          (isRec ? '<span style="color:#60a5fa">' + contrib.label + ' ' + fmt(g.latestRecurringCost) + '</span>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="pos-values">' +
+        '<div class="pos-current">' + fmt(g.currentValue) + '</div>' +
+        '<div class="pos-pnl ' + (g.pnl >= 0 ? 'up' : 'down') + '">' +
+          (g.pnl >= 0 ? '+' : '') + fmt(g.pnl) + '</div>' +
+      '</div>' +
+    '</div>';
+  });
+  html += '</div>';
+  document.getElementById('port-list').innerHTML = html;
+}
+
+function setFilter(f) { filterBroker = f; renderPortfolio(); }
+
+/* ===== FORM ===== */
+function resetFormData() {
+  editingTxId = null;
+  return {
+    type: 'ETF', name: '', isin: '', broker: 'trade_republic',
+    txType: 'buy', contribType: 'mensual',
+    calcMode: 'price', amount: '', avgPrice: '', units: '', currentPrice: '', annualCost: '',
+    sector: 'global', issuer: 'ishares', issuerCustom: '',
+    date: today(), notes: ''
+  };
+}
+
+let formData = resetFormData();
+
+function renderForm(prefill, skipReset) {
+  if (!editingTxId && !prefill && !skipReset) formData = resetFormData();
+  if (prefill) Object.assign(formData, prefill);
+  const f = formData;
+  const title = editingTxId ? 'Editar transacción' : (document.getElementById('form-title').textContent || 'Nueva transacción');
+  document.getElementById('form-title').textContent = title;
+
+  const contribOpts = CONTRIBS.map(c => '<option value="' + c.id + '"' + (f.contribType === c.id ? ' selected' : '') + '>' + c.label + '</option>').join('');
+  const typeOpts = TYPES.map(t => '<option value="' + t.id + '"' + (f.type === t.id ? ' selected' : '') + '>' + t.label + '</option>').join('');
+  const brokerOpts = BROKERS.map(b => '<option value="' + b.id + '"' + (f.broker === b.id ? ' selected' : '') + '>' + b.label + '</option>').join('');
+  const sectorOpts = SECTORS.map(s => '<option value="' + s.id + '"' + (f.sector === s.id ? ' selected' : '') + '>' + s.label + '</option>').join('');
+  const issuerOpts = ISSUERS.map(i => '<option value="' + i.id + '"' + (f.issuer === i.id ? ' selected' : '') + '>' + i.label + '</option>').join('');
+
+  const isCrypto = f.type === 'Crypto';
+  const idLabel = isCrypto ? 'Ticker' : 'ISIN';
+  const idPlaceholder = isCrypto ? 'BTC, ETH, SOL...' : 'IE00B4L5Y983';
+  const idMaxlen = isCrypto ? '10' : '12';
+
+  let html = '';
+
+  // Type + ISIN/Ticker
+  html += '<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-input" id="f-type" onchange="readForm();formData.type=this.value;if(this.value===\'Crypto\'){formData.calcMode=\'units\';formData.sector=\'crypto\';formData.issuer=\'na\';}renderForm(null,true)">' + typeOpts + '</select></div>';
+  html += '<div class="form-group"><label class="form-label">' + idLabel + '</label><input class="form-input mono" id="f-isin" value="' + esc(f.isin) + '" placeholder="' + idPlaceholder + '" maxlength="' + idMaxlen + '"></div></div>';
+
+  // Name
+  html += '<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-name" value="' + esc(f.name) + '" placeholder="' + (isCrypto ? 'Bitcoin, Ethereum...' : 'iShares Core MSCI World') + '"></div>';
+
+  // Broker + Sector
+  html += '<div class="form-row"><div class="form-group"><label class="form-label">Broker</label><select class="form-input" id="f-broker">' + brokerOpts + '</select></div>';
+  html += '<div class="form-group"><label class="form-label">Sector</label><select class="form-input" id="f-sector">' + sectorOpts + '</select></div></div>';
+
+  // Issuer + custom
+  html += '<div class="form-row"><div class="form-group"><label class="form-label">Emisor / Issuer</label><select class="form-input" id="f-issuer" onchange="readForm();formData.issuer=this.value;renderForm(null,true)">' + issuerOpts + '</select></div>';
+  if (f.issuer === 'otro_issuer') {
+    html += '<div class="form-group"><label class="form-label">Nombre emisor</label><input class="form-input" id="f-issuer-custom" value="' + esc(f.issuerCustom || '') + '" placeholder="Nombre del emisor"></div>';
+  }
+  html += '</div>';
+
+  // Buy/Sell - readForm before re-render to preserve values
+  html += '<div class="form-group"><label class="form-label">Operación</label><div class="form-toggle">' +
+    '<button class="tog-btn' + (f.txType === 'buy' ? ' active' : '') + '" onclick="readForm();formData.txType=\'buy\';renderForm(null,true)">Compra</button>' +
+    '<button class="tog-btn' + (f.txType === 'sell' ? ' active' : '') + '" onclick="readForm();formData.txType=\'sell\';renderForm(null,true)">Venta</button>' +
+  '</div></div>';
+
+  // Contribution type only (amount derived from importe invertido)
+  html += '<div class="form-group"><label class="form-label">Tipo de aporte</label><select class="form-input" id="f-ctype">' + contribOpts + '</select></div>';
+
+  // Calc mode toggle
+  html += '<div class="form-group"><label class="form-label">Datos disponibles</label><div class="form-toggle">' +
+    '<button class="tog-btn' + (f.calcMode === 'price' ? ' active' : '') + '" onclick="readForm();formData.calcMode=\'price\';renderForm(null,true)">Importe + Precio</button>' +
+    '<button class="tog-btn' + (f.calcMode === 'units' ? ' active' : '') + '" onclick="readForm();formData.calcMode=\'units\';renderForm(null,true)">Importe + Unidades</button>' +
+  '</div></div>';
+
+  // Amount always shown
+  html += '<div class="form-row"><div class="form-group"><label class="form-label">Importe invertido (€)</label><input class="form-input" id="f-amount" type="number" step="0.01" value="' + (f.amount || '') + '" placeholder="5000.00"></div>';
+
+  if (f.calcMode === 'price') {
+    // Mode: Amount + Price → calc Units
+    html += '<div class="form-group"><label class="form-label">Precio compra / ud (€)</label><input class="form-input" id="f-avg" type="number" step="0.01" value="' + (f.avgPrice || '') + '" placeholder="85.50"></div></div>';
+    const previewUnits = (parseFloat(f.amount) && parseFloat(f.avgPrice)) ? (parseFloat(f.amount) / parseFloat(f.avgPrice)).toFixed(6) : '—';
+    html += '<div style="font-size:12px;color:var(--accent2);margin:-6px 0 12px 0;padding:0 2px" data-calc-preview>Unidades calculadas: <strong>' + previewUnits + '</strong></div>';
+  } else {
+    // Mode: Amount + Units → calc Price
+    html += '<div class="form-group"><label class="form-label">Unidades compradas</label><input class="form-input" id="f-units" type="number" step="0.000001" value="' + (f.units || '') + '" placeholder="0.025000"></div></div>';
+    const previewPrice = (parseFloat(f.amount) && parseFloat(f.units)) ? (parseFloat(f.amount) / parseFloat(f.units)).toFixed(2) : '—';
+    html += '<div style="font-size:12px;color:var(--accent2);margin:-6px 0 12px 0;padding:0 2px" data-calc-preview>Precio compra calculado: <strong>€' + previewPrice + '</strong></div>';
+  }
+
+  // Current price
+  html += '<div class="form-group"><label class="form-label">Precio actual / ud (€) — Current price</label><input class="form-input" id="f-curprice" type="number" step="0.01" value="' + (f.currentPrice || '') + '" placeholder="90.25"></div>';
+
+  // Annual cost %
+  html += '<div class="form-group"><label class="form-label">Coste anual (%) — TER / Annual cost</label><input class="form-input" id="f-annualcost" type="number" step="0.01" value="' + (f.annualCost || '') + '" placeholder="0.22"></div>';
+
+  // Date (own row)
+  html += '<div class="form-group"><label class="form-label">Fecha</label><input class="form-input" id="f-date" type="date" value="' + f.date + '"></div>';
+
+  // Notes (own row)
+  html += '<div class="form-group"><label class="form-label">Notas (opcional)</label><input class="form-input" id="f-notes" value="' + esc(f.notes) + '" placeholder="DCA, plan 10 años..."></div>';
+
+  html += '<div style="margin-top:16px"><button class="btn btn-primary" onclick="saveTx()">Guardar</button>';
+  html += '<button class="btn btn-secondary" onclick="goTo(\'portfolio\')">Cancelar</button></div>';
+
+  document.getElementById('form-content').innerHTML = html;
+
+  // Auto-fill on ISIN input
+  const isinInput = document.getElementById('f-isin');
+  if (isinInput && !isinInput._listening) {
+    isinInput._listening = true;
+    isinInput.addEventListener('input', function () {
+      const v = this.value.trim().toUpperCase();
+      if (v.length >= 10) {
+        const existing = txs.find(t => t.isin === v);
+        if (existing) {
+          document.getElementById('f-name').value = existing.name;
+          document.getElementById('f-type').value = existing.type;
+          document.getElementById('f-broker').value = existing.broker;
+          if (existing.contribType) document.getElementById('f-ctype').value = existing.contribType;
+          if (existing.sector) document.getElementById('f-sector').value = existing.sector;
+          if (existing.issuer) document.getElementById('f-issuer').value = existing.issuer;
+        }
+      }
+    });
+  }
+
+  // Live calculation preview
+  ['f-amount', 'f-avg', 'f-units'].forEach(fid => {
+    const el = document.getElementById(fid);
+    if (el) {
+      el.addEventListener('input', function() {
+        const amt = parseFloat(document.getElementById('f-amount')?.value) || 0;
+        const previewEl = document.querySelector('[data-calc-preview]');
+        if (!previewEl) return;
+        if (document.getElementById('f-avg')) {
+          // Mode: price → calc units
+          const price = parseFloat(document.getElementById('f-avg').value) || 0;
+          const units = (amt && price) ? (amt / price).toFixed(6) : '—';
+          previewEl.innerHTML = 'Unidades calculadas: <strong>' + units + '</strong>';
+        } else if (document.getElementById('f-units')) {
+          // Mode: units → calc price
+          const units = parseFloat(document.getElementById('f-units').value) || 0;
+          const price = (amt && units) ? (amt / units).toFixed(2) : '—';
+          previewEl.innerHTML = 'Precio compra calculado: <strong>€' + price + '</strong>';
+        }
+      });
+    }
+  });
+}
+
+function readForm() {
+  const g = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  formData.type = g('f-type');
+  formData.isin = g('f-isin').toUpperCase().trim();
+  formData.name = g('f-name').trim();
+  formData.broker = g('f-broker');
+  formData.contribType = g('f-ctype');
+  formData.amount = g('f-amount') || '';
+  formData.avgPrice = g('f-avg') || formData.avgPrice || '';
+  formData.units = g('f-units') || formData.units || '';
+  formData.currentPrice = g('f-curprice') || '';
+  formData.annualCost = g('f-annualcost') || '';
+  formData.sector = g('f-sector') || 'global';
+  formData.issuer = g('f-issuer') || 'na';
+  formData.issuerCustom = g('f-issuer-custom') || '';
+  formData.date = g('f-date') || today();
+  formData.notes = g('f-notes') || '';
+}
+
+function saveTx() {
+  readForm();
+  const f = formData;
+  if (!f.name) return toast('Introduce un nombre');
+
+  const amount = parseFloat(f.amount) || 0;
+  if (amount <= 0) return toast('Introduce un importe invertido');
+
+  let units, avgPrice;
+  if (f.calcMode === 'units') {
+    // Amount + Units → calc Price
+    units = parseFloat(f.units) || 0;
+    if (units <= 0) return toast('Introduce las unidades compradas');
+    avgPrice = parseFloat((amount / units).toFixed(6));
+  } else {
+    // Amount + Price → calc Units
+    avgPrice = parseFloat(f.avgPrice) || 0;
+    if (avgPrice <= 0) return toast('Introduce un precio de compra');
+    units = parseFloat((amount / avgPrice).toFixed(6));
+  }
+
+  const currentPrice = parseFloat(f.currentPrice) || avgPrice;
+
+  const tx = {
+    id: editingTxId || genId(),
+    isin: f.isin || null,
+    name: f.name,
+    type: f.type,
+    broker: f.broker,
+    txType: f.txType,
+    contribType: f.contribType,
+    cost: amount,
+    units: units,
+    avgPrice: avgPrice,
+    currentPrice: currentPrice,
+    annualCost: parseFloat(f.annualCost) || 0,
+    sector: f.sector || 'global',
+    issuer: f.issuer || 'na',
+    issuerCustom: f.issuer === 'otro_issuer' ? f.issuerCustom : '',
+    date: f.date,
+    notes: f.notes,
+    createdAt: editingTxId ? (txs.find(t => t.id === editingTxId) || {}).createdAt || new Date().toISOString() : new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  if (editingTxId) {
+    const idx = txs.findIndex(t => t.id === editingTxId);
+    if (idx >= 0) txs[idx] = tx;
+    toast('✓ Actualizada');
+  } else {
+    txs.push(tx);
+    toast('✓ Transacción añadida');
+  }
+
+  save();
+  editingTxId = null;
+  goTo('portfolio');
+}
+
+/* ===== DETAIL ===== */
+function showDetail(isinOrId) {
+  detailIsin = isinOrId;
+  const matchTxs = txs.filter(t => (t.isin || t.id) === isinOrId);
+  if (!matchTxs.length) return;
+
+  // Build group manually for this ISIN
+  let totalCost = 0, totalUnits = 0, currentPrice = 0, name = '', type = '';
+  const sorted = [...matchTxs].sort((a, b) => b.date.localeCompare(a.date));
+  sorted.forEach(tx => {
+    if (tx.txType === 'sell') {
+      totalCost -= tx.cost;
+      totalUnits -= (tx.units || 0);
+    } else {
+      totalCost += tx.cost;
+      totalUnits += (tx.units || 0);
+    }
+  });
+  const latest = sorted[0];
+  name = latest.name; type = latest.type;
+  currentPrice = latest.currentPrice || 0;
+  const avgPrice = totalUnits > 0 ? totalCost / totalUnits : 0;
+  const currentValue = totalUnits * currentPrice;
+  const pnl = currentValue - totalCost;
+  const pnlPct = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
+  const detailBrokers = [...new Set(matchTxs.map(t => t.broker))].map(b => getBroker(b).label).join(', ');
+  // Weighted average TER
+  const terTxs = matchTxs.filter(t => t.annualCost && t.txType === 'buy');
+  const avgTer = terTxs.length > 0 ? terTxs[0].annualCost : null;
+
+  let html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">' +
+    '<button class="detail-back" onclick="goTo(\'portfolio\')">← Portfolio</button>' +
+    '<div class="detail-actions">' +
+      '<button onclick="addToPosition(\'' + esc(isinOrId) + '\')">+ Compra</button>' +
+      '<button onclick="updateGroupPrice(\'' + esc(isinOrId) + '\')">Actualizar precio</button>' +
+      '<button onclick="updateGroupTer(\'' + esc(isinOrId) + '\')">Actualizar TER</button>' +
+    '</div></div>';
+
+  html += '<h2>' + esc(name) + '</h2>';
+  if (latest.isin) html += '<p style="font-family:monospace;color:var(--accent2);font-size:12px;margin-bottom:14px">' + (latest.type === 'Crypto' ? 'Ticker: ' : 'ISIN: ') + esc(latest.isin) + '</p>';
+
+  // Summary cards
+  html += '<div class="cards">' +
+    '<div class="card"><span class="card-l">Invertido</span><span class="card-v sm">' + fmt(totalCost) + '</span></div>' +
+    '<div class="card"><span class="card-l">Valor actual</span><span class="card-v sm">' + fmt(currentValue) + '</span></div>' +
+    '<div class="card" style="border-left-color:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '"><span class="card-l">P&L</span><span class="card-v sm ' + (pnl >= 0 ? 'up' : 'down') + '">' + (pnl >= 0 ? '+' : '') + fmt(pnl) + ' (' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%)</span></div>' +
+    '<div class="card"><span class="card-l">Info</span><div style="margin-top:4px;font-size:11px;color:var(--text2)">' +
+      '<div>Broker: ' + detailBrokers + '</div>' +
+      (totalUnits ? '<div>Uds: ' + totalUnits.toFixed(6) + ' · P.medio: ' + fmt(avgPrice) + '</div>' : '') +
+      '<div>P.actual: ' + fmt(currentPrice) + '</div>' +
+      (avgTer ? '<div>TER: ' + avgTer + '% anual</div>' : '') +
+      '<div>Sector: ' + getSector(latest.sector).label + '</div>' +
+      '<div>Emisor: ' + (latest.issuer === 'otro_issuer' ? esc(latest.issuerCustom || 'Otro') : getIssuer(latest.issuer).label) + '</div>' +
+    '</div></div>' +
+  '</div>';
+
+  // Transaction list
+  html += '<div class="section-title">Transacciones (' + sorted.length + ')</div>';
+  html += '<div class="tx-list">';
+  sorted.forEach(tx => {
+    const contrib = getContrib(tx.contribType);
+    const isRec = tx.contribType === 'mensual' || tx.contribType === 'sparplan';
+    const bc = isRec ? 'badge-m' : tx.contribType === 'puntual' ? 'badge-p' : 'badge-n';
+
+    html += '<div class="tx-item">' +
+      '<div class="tx-left">' +
+        '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px">' +
+          '<span class="tx-type-tag ' + tx.txType + '">' + (tx.txType === 'buy' ? 'Compra' : 'Venta') + '</span>' +
+          '<span style="font-size:11px;color:var(--text3)">' + tx.date + '</span>' +
+          '<span class="badge ' + bc + '">' + contrib.label + '</span>' +
+        '</div>' +
+        (tx.units ? '<div style="font-size:11px;color:var(--text2)">' + tx.units.toFixed(6) + ' uds × ' + fmt(tx.avgPrice) + '</div>' : '') +
+        '<div style="font-size:11px;color:var(--text3)">' + getBroker(tx.broker).label +
+          (tx.annualCost ? ' · TER: ' + tx.annualCost + '%' : '') +
+          (tx.notes ? ' · ' + esc(tx.notes) : '') + '</div>' +
+      '</div>' +
+      '<div class="tx-right">' +
+        '<div style="font-size:14px;font-weight:700">' + fmt(tx.cost) + '</div>' +
+      '</div>' +
+      '<div class="tx-actions">' +
+        '<button class="tx-act-btn" onclick="event.stopPropagation();editTx(\'' + tx.id + '\')">Editar</button>' +
+        '<button class="tx-act-btn del" data-del="' + tx.id + '" onclick="event.stopPropagation();deleteTx(\'' + tx.id + '\')">Borrar</button>' +
+      '</div>' +
+    '</div>';
+  });
+  html += '</div>';
+
+  document.getElementById('detail-content').innerHTML = html;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-detail').classList.add('active');
+}
+
+function addToPosition(isinOrId) {
+  const tx = txs.find(t => (t.isin || t.id) === isinOrId);
+  if (tx) {
+    editingTxId = null;
+    formData = resetFormData();
+    formData.isin = tx.isin || '';
+    formData.name = tx.name;
+    formData.type = tx.type;
+    formData.broker = tx.broker;
+    formData.contribType = tx.contribType || 'mensual';
+    formData.currentPrice = tx.currentPrice || '';
+    formData.sector = tx.sector || 'global';
+    formData.issuer = tx.issuer || 'na';
+    formData.issuerCustom = tx.issuerCustom || '';
+    document.getElementById('form-title').textContent = 'Añadir a ' + tx.name;
+    // Navigate without resetting form
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-add').classList.add('active');
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector('[data-page="add"]').classList.add('active');
+    renderForm(null, true);
+  }
+}
+
+function updateGroupPrice(isinOrId) {
+  detailIsin = isinOrId;
+  const tx = txs.find(t => (t.isin || t.id) === isinOrId);
+  document.getElementById('edit-price').value = tx ? tx.currentPrice : '';
+  document.getElementById('modal-value').classList.add('open');
+}
+
+function saveGroupPrice() {
+  const price = parseFloat(document.getElementById('edit-price').value);
+  if (isNaN(price) || price < 0) return toast('Precio inválido');
+  // Update currentPrice on all txs with this ISIN
+  txs.forEach(t => {
+    if ((t.isin || t.id) === detailIsin) {
+      t.currentPrice = price;
+      t.updatedAt = new Date().toISOString();
+    }
+  });
+  save();
+  toast('✓ Precio actualizado');
+  showDetail(detailIsin);
+  closeModal('modal-value');
+}
+
+function updateGroupTer(isinOrId) {
+  detailIsin = isinOrId;
+  const tx = txs.find(t => (t.isin || t.id) === isinOrId);
+  document.getElementById('edit-ter').value = tx && tx.annualCost ? tx.annualCost : '';
+  document.getElementById('modal-ter').classList.add('open');
+}
+
+function saveGroupTer() {
+  const ter = parseFloat(document.getElementById('edit-ter').value);
+  if (isNaN(ter) || ter < 0) return toast('TER inválido');
+  txs.forEach(t => {
+    if ((t.isin || t.id) === detailIsin) {
+      t.annualCost = ter;
+      t.updatedAt = new Date().toISOString();
+    }
+  });
+  save();
+  toast('✓ TER actualizado para todas las transacciones');
+  showDetail(detailIsin);
+  closeModal('modal-ter');
+}
+
+function editTx(id) {
+  const tx = txs.find(t => t.id === id);
+  if (!tx) return;
+  editingTxId = id;
+  formData = {
+    type: tx.type, name: tx.name, isin: tx.isin || '', broker: tx.broker,
+    txType: tx.txType, contribType: tx.contribType || 'ninguno',
+    calcMode: tx.type === 'Crypto' ? 'units' : 'price',
+    amount: tx.cost || '', avgPrice: tx.avgPrice || '', units: tx.units || '',
+    currentPrice: tx.currentPrice || '', annualCost: tx.annualCost || '',
+    sector: tx.sector || 'global', issuer: tx.issuer || 'na', issuerCustom: tx.issuerCustom || '',
+    date: tx.date, notes: tx.notes || ''
+  };
+  document.getElementById('form-title').textContent = 'Editar transacción';
+  goTo('add');
+  renderForm();
+}
+
+let pendingDeleteId = null;
+let pendingDeleteTimer = null;
+
+function deleteTx(id) {
+  if (pendingDeleteId === id) {
+    // Second tap — actually delete
+    clearTimeout(pendingDeleteTimer);
+    pendingDeleteId = null;
+    txs = txs.filter(t => t.id !== id);
+    save();
+    toast('✓ Eliminada');
+    const remaining = txs.filter(t => (t.isin || t.id) === detailIsin);
+    remaining.length > 0 ? showDetail(detailIsin) : goTo('portfolio');
+  } else {
+    // First tap — ask confirmation
+    if (pendingDeleteTimer) clearTimeout(pendingDeleteTimer);
+    pendingDeleteId = id;
+    // Change button text
+    const btn = document.querySelector('[data-del="' + id + '"]');
+    if (btn) { btn.textContent = '¿Seguro?'; btn.style.background = 'var(--red)'; btn.style.color = '#fff'; }
+    // Reset after 3 seconds
+    pendingDeleteTimer = setTimeout(() => {
+      pendingDeleteId = null;
+      const btn2 = document.querySelector('[data-del="' + id + '"]');
+      if (btn2) { btn2.textContent = 'Borrar'; btn2.style.background = ''; btn2.style.color = ''; }
+    }, 3000);
+  }
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+/* ===== IMPORT / EXPORT ===== */
+async function doExport(format) {
+  if (!txs.length) return toast('No hay datos');
+  let content, filename, type;
+
+  if (format === 'json') {
+    content = JSON.stringify({ version: 3, exportDate: new Date().toISOString(), transactions: txs }, null, 2);
+    filename = 'portfolio-' + today() + '.json';
+    type = 'application/json';
+  } else {
+    const h = 'isin_ticker,nombre,tipo,broker,sector,emisor,operacion,tipo_aporte,unidades,precio_compra,coste_total,precio_actual,valor_actual,pnl,ter_anual,fecha,notas';
+    const rows = txs.map(t => {
+      const val = (t.units || 0) * (t.currentPrice || 0);
+      const pnl = val - t.cost;
+      const issuerLabel = t.issuer === 'otro_issuer' ? (t.issuerCustom || 'Otro') : getIssuer(t.issuer).label;
+      return [
+        t.isin || '', '"' + t.name + '"', t.type, getBroker(t.broker).label,
+        getSector(t.sector).label, '"' + issuerLabel + '"',
+        t.txType, getContrib(t.contribType).label,
+        t.units ? t.units.toFixed(6) : '', t.avgPrice || '', t.cost.toFixed(2),
+        t.currentPrice || '', val.toFixed(2), pnl.toFixed(2),
+        t.annualCost || '',
+        t.date, '"' + (t.notes || '') + '"'
+      ].join(',');
+    });
+    content = h + '\n' + rows.join('\n');
+    filename = 'portfolio-' + today() + '.csv';
+    type = 'text/csv';
+  }
+
+  const blob = new Blob([content], { type });
+  const file = new File([blob], filename, { type });
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: filename }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+  toast('✓ ' + format.toUpperCase() + ' exportado');
+}
+
+let pendingImportData = null;
+
+function doImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      const raw = JSON.parse(e.target.result);
+      let data;
+      if (raw.version && Array.isArray(raw.transactions)) data = raw.transactions;
+      else if (Array.isArray(raw)) data = raw;
+      else throw new Error('Formato no reconocido');
+      pendingImportData = data;
+      document.getElementById('import-info').textContent =
+        'Archivo: ' + data.length + ' transacciones · Actuales: ' + txs.length + ' transacciones';
+      document.getElementById('modal-import').classList.add('open');
+    } catch (err) { toast('Error: ' + err.message); }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+function execImport(mode) {
+  if (!pendingImportData) return;
+  if (mode === 'merge') {
+    // Add new transactions, skip duplicates by id
+    const existingIds = new Set(txs.map(t => t.id));
+    let added = 0;
+    pendingImportData.forEach(t => {
+      if (!existingIds.has(t.id)) {
+        txs.push(t);
+        added++;
+      }
+    });
+    save();
+    toast('✓ Añadidas ' + added + ' transacciones nuevas');
+  } else {
+    txs = pendingImportData;
+    save();
+    toast('✓ Reemplazadas con ' + txs.length + ' transacciones');
+  }
+  pendingImportData = null;
+  closeModal('modal-import');
+  goTo('portfolio');
+}
+
+function doImportPrices(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      const prices = JSON.parse(e.target.result);
+      if (typeof prices !== 'object' || Array.isArray(prices)) throw new Error('Formato inválido. Esperado: { "ISIN": precio, ... }');
+      let updated = 0;
+      const now = new Date().toISOString();
+      Object.entries(prices).forEach(([key, price]) => {
+        const p = parseFloat(price);
+        if (isNaN(p) || p < 0) return;
+        const upperKey = key.toUpperCase();
+        txs.forEach(t => {
+          if (t.isin && t.isin.toUpperCase() === upperKey) {
+            t.currentPrice = p;
+            t.updatedAt = now;
+            updated++;
+          }
+        });
+      });
+      if (updated === 0) {
+        toast('No se encontraron coincidencias');
+      } else {
+        save();
+        toast('✓ ' + updated + ' transacciones actualizadas');
+        goTo('portfolio');
+      }
+    } catch (err) { toast('Error: ' + err.message); }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+let clearPending = false;
+let clearTimer = null;
+function clearAllData() {
+  if (clearPending) {
+    clearTimeout(clearTimer);
+    clearPending = false;
+    txs = []; save();
+    toast('🗑️ Borrado');
+    renderPortfolio();
+    const btn = document.getElementById('btn-clear-all');
+    if (btn) { btn.textContent = 'Borrar todos los datos'; btn.style.background = ''; btn.style.color = ''; }
+  } else {
+    clearPending = true;
+    const btn = document.getElementById('btn-clear-all');
+    if (btn) { btn.textContent = '¿Seguro? Toca de nuevo'; btn.style.background = 'var(--red)'; btn.style.color = '#fff'; }
+    clearTimer = setTimeout(() => {
+      clearPending = false;
+      if (btn) { btn.textContent = 'Borrar todos los datos'; btn.style.background = ''; btn.style.color = ''; }
+    }, 3000);
+  }
+}
+
+function updateDataInfo() {
+  const isins = new Set(txs.filter(t => t.isin).map(t => t.isin));
+  const bytes = new Blob([JSON.stringify(txs)]).size;
+  document.getElementById('data-info').textContent =
+    txs.length + ' transacciones · ' + isins.size + ' ISINs · ' + (bytes / 1024).toFixed(1) + ' KB';
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+init();
+</script>
+</body>
+</html>
