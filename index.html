@@ -28,33 +28,6 @@ body {
   padding-bottom: calc(60px + var(--safe-bottom));
 }
 
-/* AUTH BAR */
-.auth-bar {
-  background: var(--bg2); border-bottom: 1px solid var(--border);
-  padding: 8px 16px; display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; position: sticky; top: 0; z-index: 80;
-}
-.auth-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.auth-avatar {
-  width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--accent);
-  flex-shrink: 0; object-fit: cover;
-}
-.auth-name { font-size: 12px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sync-status { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text3); flex-shrink: 0; }
-.sync-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.sync-dot.ok { background: var(--green); }
-.sync-dot.syncing { background: var(--accent); animation: pulse 1s infinite; }
-.sync-dot.offline { background: var(--text3); }
-.sync-dot.error { background: var(--red); }
-@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
-
-.auth-btn {
-  padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 600;
-  border: 1px solid var(--border); cursor: pointer; white-space: nowrap; flex-shrink: 0;
-}
-.auth-btn.login { background: var(--accent); color: #fff; border-color: var(--accent); }
-.auth-btn.logout { background: var(--bg3); color: var(--text3); }
-
 /* NAV */
 .nav {
   position: fixed; bottom: 0; left: 0; right: 0;
@@ -213,6 +186,26 @@ select.form-input { appearance: auto; }
 .file-input-wrapper { position: relative; overflow: hidden; display: inline-block; width: 100%; }
 .file-input-wrapper input[type=file] { position: absolute; left: 0; top: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
 
+/* AUTH BAR */
+.auth-bar {
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 8px 16px; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; position: sticky; top: 0; z-index: 80;
+}
+.auth-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.auth-avatar { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--accent); flex-shrink: 0; object-fit: cover; }
+.auth-name { font-size: 12px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sync-status { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text3); flex-shrink: 0; }
+.sync-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.sync-dot.ok { background: var(--green); }
+.sync-dot.syncing { background: var(--accent); animation: pulse 1s infinite; }
+.sync-dot.offline { background: var(--text3); }
+.sync-dot.error { background: var(--red); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+.auth-btn { padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; border: 1px solid var(--border); cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.auth-btn.login { background: var(--accent); color: #fff; border-color: var(--accent); }
+.auth-btn.logout { background: var(--bg3); color: var(--text3); }
+
 /* TOAST */
 .toast {
   position: fixed; top: 50px; left: 16px; right: 16px; max-width: 500px; margin: 0 auto;
@@ -225,9 +218,7 @@ select.form-input { appearance: auto; }
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════════════════════ -->
-<!--  AUTH BAR — Login con Google + indicador de sync       -->
-<!-- ═══════════════════════════════════════════════════════ -->
+<!-- AUTH BAR -->
 <div class="auth-bar" id="auth-bar">
   <div class="auth-left" id="auth-left">
     <span style="font-size:12px;color:var(--text3)">Sin conectar — datos locales</span>
@@ -361,24 +352,13 @@ select.form-input { appearance: auto; }
 
 <div class="toast" id="toast"></div>
 
-<!-- ═══════════════════════════════════════════════════════ -->
-<!--  FIREBASE SDK (compat v9 — funciona con namespace)     -->
-<!-- ═══════════════════════════════════════════════════════ -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
-   🔥 FIREBASE CONFIG — RELLENA CON TUS DATOS
-   ═══════════════════════════════════════════════════════════
-   Instrucciones:
-   1. Ve a https://console.firebase.google.com
-   2. Crea un proyecto (o usa uno existente)
-   3. Añade una "Web app" y copia el firebaseConfig
-   4. En Authentication → Sign-in method → activa Google
-   5. En Firestore Database → Crear base de datos → modo test
-   6. Pega tu config aquí abajo:
+   🔥 FIREBASE CONFIG
    ═══════════════════════════════════════════════════════════ */
 const firebaseConfig = {
   apiKey: "AIzaSyAz1YaR8T9F81zvGBqeJTGmCbJMSI9gw_I",
@@ -389,137 +369,90 @@ const firebaseConfig = {
   appId: "1:576091093200:web:81befaf5be7099e6bbc6d5"
 };
 
-/* ═══════════════════════════════════════════════════════════
-   FIREBASE INIT + AUTH + FIRESTORE SYNC
-   ═══════════════════════════════════════════════════════════ */
 let fbApp = null, fbAuth = null, fbDb = null, fbUser = null;
 let firebaseReady = false;
 let syncTimeout = null;
+let unsubFirestore = null;
 
 function initFirebase() {
   try {
-    // No inicializar si el config es placeholder
-    if (firebaseConfig.apiKey === "TU_API_KEY") {
-      console.log('⚠️ Firebase no configurado — usando solo localStorage');
-      return;
-    }
     fbApp = firebase.initializeApp(firebaseConfig);
     fbAuth = firebase.auth();
     fbDb = firebase.firestore();
-
-    // Habilitar persistencia offline de Firestore
-    fbDb.enablePersistence({ synchronizeTabs: true }).catch(err => {
-      if (err.code === 'failed-precondition') {
-        console.warn('Firestore persistence: múltiples tabs abiertas');
-      } else if (err.code === 'unimplemented') {
-        console.warn('Firestore persistence: no soportado en este navegador');
-      }
-    });
-
+    fbDb.enablePersistence({ synchronizeTabs: true }).catch(() => {});
     firebaseReady = true;
-
-    // Escuchar cambios de autenticación
     fbAuth.onAuthStateChanged(async (user) => {
       fbUser = user;
       updateAuthUI();
       if (user) {
         await loadFromFirestore();
-        listenToFirestore(); // Escuchar cambios en tiempo real
+        listenToFirestore();
       }
     });
-
-    console.log('✅ Firebase inicializado');
-  } catch (err) {
-    console.error('Error inicializando Firebase:', err);
-  }
+  } catch (err) { console.error('Firebase init error:', err); }
 }
 
-/* --- AUTH UI --- */
 function updateAuthUI() {
   const left = document.getElementById('auth-left');
   const btn = document.getElementById('auth-btn');
   const syncEl = document.getElementById('sync-status');
   const cloudSection = document.getElementById('cloud-sync-section');
-
   if (fbUser) {
     const photo = fbUser.photoURL
       ? '<img class="auth-avatar" src="' + fbUser.photoURL + '" referrerpolicy="no-referrer">'
       : '<div class="auth-avatar" style="background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff">' + (fbUser.displayName || 'U')[0] + '</div>';
     left.innerHTML = photo + '<span class="auth-name">' + esc(fbUser.displayName || fbUser.email) + '</span>';
-    btn.textContent = 'Sign out';
-    btn.className = 'auth-btn logout';
+    btn.textContent = 'Sign out'; btn.className = 'auth-btn logout';
     syncEl.style.display = 'flex';
     cloudSection.style.display = 'block';
   } else {
     left.innerHTML = '<span style="font-size:12px;color:var(--text3)">Sin conectar — datos locales</span>';
-    btn.textContent = 'Sign in';
-    btn.className = 'auth-btn login';
+    btn.textContent = 'Sign in'; btn.className = 'auth-btn login';
     syncEl.style.display = 'none';
     cloudSection.style.display = 'none';
   }
 }
 
 function handleAuth() {
-  if (!firebaseReady) {
-    toast('⚠️ Firebase no configurado. Edita firebaseConfig en el HTML.');
-    return;
-  }
-  if (fbUser) {
-    fbAuth.signOut();
-    toast('Sesión cerrada');
-  } else {
+  if (!firebaseReady) return toast('⚠️ Firebase no configurado');
+  if (fbUser) { fbAuth.signOut(); toast('Sesión cerrada'); }
+  else {
     const provider = new firebase.auth.GoogleAuthProvider();
     fbAuth.signInWithPopup(provider).catch(err => {
-      // Fallback a redirect en móviles donde popup puede fallar
-      if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
+      if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user')
         fbAuth.signInWithRedirect(provider);
-      } else {
-        console.error('Auth error:', err);
-        toast('Error de autenticación');
-      }
+      else toast('Error de autenticación');
     });
   }
 }
 
-/* --- SYNC STATUS --- */
 function setSyncStatus(status, label) {
   const dot = document.getElementById('sync-dot');
   const lbl = document.getElementById('sync-label');
-  if (!dot || !lbl) return;
-  dot.className = 'sync-dot ' + status;
-  lbl.textContent = label || '';
+  if (dot) dot.className = 'sync-dot ' + status;
+  if (lbl) lbl.textContent = label || '';
 }
 
-/* --- FIRESTORE: SAVE --- */
 async function saveToFirestore() {
   if (!firebaseReady || !fbUser || !fbDb) return;
-
   setSyncStatus('syncing', 'Guardando...');
   try {
-    const docRef = fbDb.collection('portfolios').doc(fbUser.uid);
-    await docRef.set({
+    await fbDb.collection('portfolios').doc(fbUser.uid).set({
       transactions: txs,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       txCount: txs.length
     });
     setSyncStatus('ok', 'Sincronizado');
-    console.log('☁️ Guardado en Firestore:', txs.length, 'txs');
-  } catch (err) {
-    console.error('Error guardando en Firestore:', err);
-    setSyncStatus('error', 'Error sync');
-  }
+  } catch (err) { console.error('Firestore save error:', err); setSyncStatus('error', 'Error sync'); }
 }
 
-/* Debounced save — espera 1s después del último cambio */
 function debouncedCloudSave() {
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(() => saveToFirestore(), 1000);
 }
 
-/* --- FIRESTORE: LOAD --- */
 async function loadFromFirestore() {
   if (!firebaseReady || !fbUser || !fbDb) return;
-
   setSyncStatus('syncing', 'Cargando...');
   try {
     const doc = await fbDb.collection('portfolios').doc(fbUser.uid).get();
@@ -527,32 +460,19 @@ async function loadFromFirestore() {
       const data = doc.data();
       if (data.transactions && Array.isArray(data.transactions)) {
         txs = data.transactions;
-        localStorage.setItem(STORE_KEY, JSON.stringify(txs)); // Backup local
+        localStorage.setItem(STORE_KEY, JSON.stringify(txs));
         renderPortfolio();
-        console.log('☁️ Cargado de Firestore:', txs.length, 'txs');
       }
-    } else {
-      // Primera vez — subir datos locales a la nube
-      if (txs.length > 0) {
-        console.log('☁️ Primera sincronización — subiendo datos locales');
-        await saveToFirestore();
-      }
+    } else if (txs.length > 0) {
+      await saveToFirestore();
     }
     setSyncStatus('ok', 'Sincronizado');
-  } catch (err) {
-    console.error('Error cargando de Firestore:', err);
-    setSyncStatus('error', 'Error sync');
-  }
+  } catch (err) { console.error('Firestore load error:', err); setSyncStatus('error', 'Error sync'); }
 }
-
-/* --- FIRESTORE: REALTIME LISTENER --- */
-let unsubFirestore = null;
 
 function listenToFirestore() {
   if (!firebaseReady || !fbUser || !fbDb) return;
-  // Limpiar listener anterior
   if (unsubFirestore) unsubFirestore();
-
   unsubFirestore = fbDb.collection('portfolios').doc(fbUser.uid)
     .onSnapshot({ includeMetadataChanges: true }, (doc) => {
       if (!doc.exists) return;
@@ -560,47 +480,30 @@ function listenToFirestore() {
       if (source === 'server') {
         const data = doc.data();
         if (data.transactions && Array.isArray(data.transactions)) {
-          // Solo actualizar si los datos son diferentes
           if (JSON.stringify(data.transactions) !== JSON.stringify(txs)) {
             txs = data.transactions;
             localStorage.setItem(STORE_KEY, JSON.stringify(txs));
             renderPortfolio();
-            console.log('☁️ Actualizado desde otra sesión:', txs.length, 'txs');
             setSyncStatus('ok', 'Sincronizado');
           }
         }
       }
-      // Indicar si hay escrituras pendientes
-      if (doc.metadata.hasPendingWrites) {
-        setSyncStatus('syncing', 'Pendiente...');
-      } else {
-        setSyncStatus('ok', 'Sincronizado');
-      }
-    }, err => {
-      console.error('Firestore listener error:', err);
-      setSyncStatus('error', 'Error');
-    });
+      if (doc.metadata.hasPendingWrites) setSyncStatus('syncing', 'Pendiente...');
+      else setSyncStatus('ok', 'Sincronizado');
+    }, () => setSyncStatus('error', 'Error'));
 }
 
-/* --- FORCE SYNC BUTTONS --- */
 async function forceSyncFromCloud() {
   if (!fbUser) return toast('Inicia sesión primero');
-  await loadFromFirestore();
-  renderPortfolio();
-  toast('⬇ Datos descargados de la nube');
+  await loadFromFirestore(); renderPortfolio(); toast('⬇ Datos descargados de la nube');
 }
-
 async function forceSyncToCloud() {
   if (!fbUser) return toast('Inicia sesión primero');
-  await saveToFirestore();
-  toast('⬆ Datos subidos a la nube');
+  await saveToFirestore(); toast('⬆ Datos subidos a la nube');
 }
+</script>
 
-
-/* ═══════════════════════════════════════════════════════════
-   APP ORIGINAL — con sync a Firestore integrado
-   ═══════════════════════════════════════════════════════════ */
-
+<script>
 /* ===== CONSTANTS ===== */
 const BROKERS = [
   { id:"trade_republic", label:"Trade Republic", color:"#1A1A1A" },
@@ -682,18 +585,14 @@ const getSector = id => SECTORS.find(s => s.id === id) || SECTORS[SECTORS.length
 const getIssuer = id => ISSUERS.find(i => i.id === id) || ISSUERS[ISSUERS.length - 1];
 const typeColors = { ETF: '#3b82f6', Stock: '#fbbf24', Bond: '#10b981', Fund: '#ec4899', Crypto: '#f97316', Other: '#6b7280' };
 
-/* ===== STORAGE — localStorage + Firestore ===== */
+/* ===== STORAGE ===== */
 function save() {
   localStorage.setItem(STORE_KEY, JSON.stringify(txs));
-  // Sync a la nube (debounced)
   if (fbUser) debouncedCloudSave();
 }
-
 function init() {
-  // Cargar datos locales primero (para render inmediato)
   txs = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
   renderPortfolio();
-  // Luego inicializar Firebase (cargará de la nube si hay sesión)
   initFirebase();
 }
 
@@ -768,19 +667,29 @@ function renderPortfolio() {
   const totCurrent = groups.reduce((s, g) => s + g.currentValue, 0);
   const totPnl = totCurrent - totCost;
   const totPnlPct = totCost > 0 ? (totPnl / totCost) * 100 : 0;
+  const totMonthly = allTxs
+    .filter(t => t.contribType === 'mensual' || t.contribType === 'sparplan')
+    .reduce((s, t) => {
+      // Only count latest per ISIN
+      return s;
+    }, 0);
+  // Recalculate monthly from groups
   const monthly = groups
     .filter(g => g.contribType === 'mensual' || g.contribType === 'sparplan')
     .reduce((s, g) => s + g.latestRecurringCost, 0);
 
+  // Cards
   document.getElementById('port-cards').innerHTML =
     '<div class="card"><span class="card-l">Invertido / Invested</span><span class="card-v">' + fmt(totCost) + '</span></div>' +
     '<div class="card"><span class="card-l">Valor actual / Current</span><span class="card-v">' + fmt(totCurrent) + '</span></div>' +
     '<div class="card" style="border-left-color:' + (totPnl >= 0 ? 'var(--green)' : 'var(--red)') + '"><span class="card-l">P&L</span><span class="card-v ' + (totPnl >= 0 ? 'up' : 'down') + '">' + (totPnl >= 0 ? '+' : '') + fmt(totPnl) + ' (' + (totPnlPct >= 0 ? '+' : '') + totPnlPct.toFixed(2) + '%)</span></div>' +
     '<div class="card"><span class="card-l">Recurrente / mes</span><span class="card-v sm">' + fmt(monthly) + '</span></div>';
 
+  // Subtitle
   document.getElementById('port-subtitle').textContent =
     groups.length + ' posiciones · ' + txs.length + ' transacciones';
 
+  // Filters - brokers
   let fh = '<button class="filt' + (filterBroker === 'all' ? ' on' : '') + '" style="' + (filterBroker === 'all' ? 'background:var(--accent)' : '') + '" onclick="setFilter(\'all\')">Todos</button>';
   const usedBrokers = [...new Set(txs.map(t => t.broker))];
   usedBrokers.forEach(bid => {
@@ -789,6 +698,7 @@ function renderPortfolio() {
   });
   document.getElementById('port-filters').innerHTML = fh;
 
+  // Position list
   if (groups.length === 0) {
     document.getElementById('port-list').innerHTML =
       '<div class="empty"><div style="font-size:36px;margin-bottom:8px">📊</div>' +
@@ -866,47 +776,64 @@ function renderForm(prefill, skipReset) {
 
   let html = '';
 
+  // Type + ISIN/Ticker
   html += '<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-input" id="f-type" onchange="readForm();formData.type=this.value;if(this.value===\'Crypto\'){formData.calcMode=\'units\';formData.sector=\'crypto\';formData.issuer=\'na\';}renderForm(null,true)">' + typeOpts + '</select></div>';
   html += '<div class="form-group"><label class="form-label">' + idLabel + '</label><input class="form-input mono" id="f-isin" value="' + esc(f.isin) + '" placeholder="' + idPlaceholder + '" maxlength="' + idMaxlen + '"></div></div>';
 
+  // Name
   html += '<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-name" value="' + esc(f.name) + '" placeholder="' + (isCrypto ? 'Bitcoin, Ethereum...' : 'iShares Core MSCI World') + '"></div>';
 
+  // Broker + Sector
   html += '<div class="form-row"><div class="form-group"><label class="form-label">Broker</label><select class="form-input" id="f-broker">' + brokerOpts + '</select></div>';
   html += '<div class="form-group"><label class="form-label">Sector</label><select class="form-input" id="f-sector">' + sectorOpts + '</select></div></div>';
 
+  // Issuer + custom
   html += '<div class="form-row"><div class="form-group"><label class="form-label">Emisor / Issuer</label><select class="form-input" id="f-issuer" onchange="readForm();formData.issuer=this.value;renderForm(null,true)">' + issuerOpts + '</select></div>';
   if (f.issuer === 'otro_issuer') {
     html += '<div class="form-group"><label class="form-label">Nombre emisor</label><input class="form-input" id="f-issuer-custom" value="' + esc(f.issuerCustom || '') + '" placeholder="Nombre del emisor"></div>';
   }
   html += '</div>';
 
+  // Buy/Sell - readForm before re-render to preserve values
   html += '<div class="form-group"><label class="form-label">Operación</label><div class="form-toggle">' +
     '<button class="tog-btn' + (f.txType === 'buy' ? ' active' : '') + '" onclick="readForm();formData.txType=\'buy\';renderForm(null,true)">Compra</button>' +
     '<button class="tog-btn' + (f.txType === 'sell' ? ' active' : '') + '" onclick="readForm();formData.txType=\'sell\';renderForm(null,true)">Venta</button>' +
   '</div></div>';
 
+  // Contribution type only (amount derived from importe invertido)
   html += '<div class="form-group"><label class="form-label">Tipo de aporte</label><select class="form-input" id="f-ctype">' + contribOpts + '</select></div>';
 
+  // Calc mode toggle
   html += '<div class="form-group"><label class="form-label">Datos disponibles</label><div class="form-toggle">' +
     '<button class="tog-btn' + (f.calcMode === 'price' ? ' active' : '') + '" onclick="readForm();formData.calcMode=\'price\';renderForm(null,true)">Importe + Precio</button>' +
     '<button class="tog-btn' + (f.calcMode === 'units' ? ' active' : '') + '" onclick="readForm();formData.calcMode=\'units\';renderForm(null,true)">Importe + Unidades</button>' +
   '</div></div>';
 
+  // Amount always shown
   html += '<div class="form-row"><div class="form-group"><label class="form-label">Importe invertido (€)</label><input class="form-input" id="f-amount" type="number" step="0.01" value="' + (f.amount || '') + '" placeholder="5000.00"></div>';
 
   if (f.calcMode === 'price') {
+    // Mode: Amount + Price → calc Units
     html += '<div class="form-group"><label class="form-label">Precio compra / ud (€)</label><input class="form-input" id="f-avg" type="number" step="0.01" value="' + (f.avgPrice || '') + '" placeholder="85.50"></div></div>';
     const previewUnits = (parseFloat(f.amount) && parseFloat(f.avgPrice)) ? (parseFloat(f.amount) / parseFloat(f.avgPrice)).toFixed(6) : '—';
     html += '<div style="font-size:12px;color:var(--accent2);margin:-6px 0 12px 0;padding:0 2px" data-calc-preview>Unidades calculadas: <strong>' + previewUnits + '</strong></div>';
   } else {
+    // Mode: Amount + Units → calc Price
     html += '<div class="form-group"><label class="form-label">Unidades compradas</label><input class="form-input" id="f-units" type="number" step="0.000001" value="' + (f.units || '') + '" placeholder="0.025000"></div></div>';
     const previewPrice = (parseFloat(f.amount) && parseFloat(f.units)) ? (parseFloat(f.amount) / parseFloat(f.units)).toFixed(2) : '—';
     html += '<div style="font-size:12px;color:var(--accent2);margin:-6px 0 12px 0;padding:0 2px" data-calc-preview>Precio compra calculado: <strong>€' + previewPrice + '</strong></div>';
   }
 
+  // Current price
   html += '<div class="form-group"><label class="form-label">Precio actual / ud (€) — Current price</label><input class="form-input" id="f-curprice" type="number" step="0.01" value="' + (f.currentPrice || '') + '" placeholder="90.25"></div>';
+
+  // Annual cost %
   html += '<div class="form-group"><label class="form-label">Coste anual (%) — TER / Annual cost</label><input class="form-input" id="f-annualcost" type="number" step="0.01" value="' + (f.annualCost || '') + '" placeholder="0.22"></div>';
+
+  // Date (own row)
   html += '<div class="form-group"><label class="form-label">Fecha</label><input class="form-input" id="f-date" type="date" value="' + f.date + '"></div>';
+
+  // Notes (own row)
   html += '<div class="form-group"><label class="form-label">Notas (opcional)</label><input class="form-input" id="f-notes" value="' + esc(f.notes) + '" placeholder="DCA, plan 10 años..."></div>';
 
   html += '<div style="margin-top:16px"><button class="btn btn-primary" onclick="saveTx()">Guardar</button>';
@@ -914,6 +841,7 @@ function renderForm(prefill, skipReset) {
 
   document.getElementById('form-content').innerHTML = html;
 
+  // Auto-fill on ISIN input
   const isinInput = document.getElementById('f-isin');
   if (isinInput && !isinInput._listening) {
     isinInput._listening = true;
@@ -933,6 +861,7 @@ function renderForm(prefill, skipReset) {
     });
   }
 
+  // Live calculation preview
   ['f-amount', 'f-avg', 'f-units'].forEach(fid => {
     const el = document.getElementById(fid);
     if (el) {
@@ -941,10 +870,12 @@ function renderForm(prefill, skipReset) {
         const previewEl = document.querySelector('[data-calc-preview]');
         if (!previewEl) return;
         if (document.getElementById('f-avg')) {
+          // Mode: price → calc units
           const price = parseFloat(document.getElementById('f-avg').value) || 0;
           const units = (amt && price) ? (amt / price).toFixed(6) : '—';
           previewEl.innerHTML = 'Unidades calculadas: <strong>' + units + '</strong>';
         } else if (document.getElementById('f-units')) {
+          // Mode: units → calc price
           const units = parseFloat(document.getElementById('f-units').value) || 0;
           const price = (amt && units) ? (amt / units).toFixed(2) : '—';
           previewEl.innerHTML = 'Precio compra calculado: <strong>€' + price + '</strong>';
@@ -983,10 +914,12 @@ function saveTx() {
 
   let units, avgPrice;
   if (f.calcMode === 'units') {
+    // Amount + Units → calc Price
     units = parseFloat(f.units) || 0;
     if (units <= 0) return toast('Introduce las unidades compradas');
     avgPrice = parseFloat((amount / units).toFixed(6));
   } else {
+    // Amount + Price → calc Units
     avgPrice = parseFloat(f.avgPrice) || 0;
     if (avgPrice <= 0) return toast('Introduce un precio de compra');
     units = parseFloat((amount / avgPrice).toFixed(6));
@@ -1036,6 +969,7 @@ function showDetail(isinOrId) {
   const matchTxs = txs.filter(t => (t.isin || t.id) === isinOrId);
   if (!matchTxs.length) return;
 
+  // Build group manually for this ISIN
   let totalCost = 0, totalUnits = 0, currentPrice = 0, name = '', type = '';
   const sorted = [...matchTxs].sort((a, b) => b.date.localeCompare(a.date));
   sorted.forEach(tx => {
@@ -1055,6 +989,7 @@ function showDetail(isinOrId) {
   const pnl = currentValue - totalCost;
   const pnlPct = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
   const detailBrokers = [...new Set(matchTxs.map(t => t.broker))].map(b => getBroker(b).label).join(', ');
+  // Weighted average TER
   const terTxs = matchTxs.filter(t => t.annualCost && t.txType === 'buy');
   const avgTer = terTxs.length > 0 ? terTxs[0].annualCost : null;
 
@@ -1069,6 +1004,7 @@ function showDetail(isinOrId) {
   html += '<h2>' + esc(name) + '</h2>';
   if (latest.isin) html += '<p style="font-family:monospace;color:var(--accent2);font-size:12px;margin-bottom:14px">' + (latest.type === 'Crypto' ? 'Ticker: ' : 'ISIN: ') + esc(latest.isin) + '</p>';
 
+  // Summary cards
   html += '<div class="cards">' +
     '<div class="card"><span class="card-l">Invertido</span><span class="card-v sm">' + fmt(totalCost) + '</span></div>' +
     '<div class="card"><span class="card-l">Valor actual</span><span class="card-v sm">' + fmt(currentValue) + '</span></div>' +
@@ -1083,6 +1019,7 @@ function showDetail(isinOrId) {
     '</div></div>' +
   '</div>';
 
+  // Transaction list
   html += '<div class="section-title">Transacciones (' + sorted.length + ')</div>';
   html += '<div class="tx-list">';
   sorted.forEach(tx => {
@@ -1133,6 +1070,7 @@ function addToPosition(isinOrId) {
     formData.issuer = tx.issuer || 'na';
     formData.issuerCustom = tx.issuerCustom || '';
     document.getElementById('form-title').textContent = 'Añadir a ' + tx.name;
+    // Navigate without resetting form
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.getElementById('page-add').classList.add('active');
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -1151,6 +1089,7 @@ function updateGroupPrice(isinOrId) {
 function saveGroupPrice() {
   const price = parseFloat(document.getElementById('edit-price').value);
   if (isNaN(price) || price < 0) return toast('Precio inválido');
+  // Update currentPrice on all txs with this ISIN
   txs.forEach(t => {
     if ((t.isin || t.id) === detailIsin) {
       t.currentPrice = price;
@@ -1208,6 +1147,7 @@ let pendingDeleteTimer = null;
 
 function deleteTx(id) {
   if (pendingDeleteId === id) {
+    // Second tap — actually delete
     clearTimeout(pendingDeleteTimer);
     pendingDeleteId = null;
     txs = txs.filter(t => t.id !== id);
@@ -1216,10 +1156,13 @@ function deleteTx(id) {
     const remaining = txs.filter(t => (t.isin || t.id) === detailIsin);
     remaining.length > 0 ? showDetail(detailIsin) : goTo('portfolio');
   } else {
+    // First tap — ask confirmation
     if (pendingDeleteTimer) clearTimeout(pendingDeleteTimer);
     pendingDeleteId = id;
+    // Change button text
     const btn = document.querySelector('[data-del="' + id + '"]');
     if (btn) { btn.textContent = '¿Seguro?'; btn.style.background = 'var(--red)'; btn.style.color = '#fff'; }
+    // Reset after 3 seconds
     pendingDeleteTimer = setTimeout(() => {
       pendingDeleteId = null;
       const btn2 = document.querySelector('[data-del="' + id + '"]');
@@ -1271,6 +1214,49 @@ async function doExport(format) {
 
 let pendingImportData = null;
 
+// Normalize transactions from different JSON formats
+function normalizeTx(t) {
+  return {
+    id: t.id || genId(),
+    isin: t.isin || null,
+    name: t.name || '',
+    type: t.type === 'buy' || t.type === 'sell' ? (t.isin && t.isin.startsWith('DE') ? 'Stock' : 'ETF') : (t.type || 'ETF'),
+    broker: normalizeBroker(t.broker),
+    txType: (t.txType || t.type || 'buy').toLowerCase() === 'sell' ? 'sell' : 'buy',
+    contribType: t.contribType || 'puntual',
+    cost: Math.abs(t.cost || t.total || 0),
+    units: Math.abs(t.units || t.quantity || 0),
+    avgPrice: t.avgPrice || t.price || 0,
+    currentPrice: t.currentPrice || t.price || 0,
+    annualCost: t.annualCost || 0,
+    sector: t.sector || 'global',
+    issuer: t.issuer || 'na',
+    issuerCustom: t.issuerCustom || '',
+    date: t.date || today(),
+    notes: t.notes || '',
+    createdAt: t.createdAt || new Date().toISOString(),
+    updatedAt: t.updatedAt || new Date().toISOString()
+  };
+}
+
+function normalizeBroker(b) {
+  if (!b) return 'otro';
+  const lower = b.toLowerCase();
+  if (lower.includes('trade republic')) return 'trade_republic';
+  if (lower.includes('n26')) return 'n26';
+  if (lower.includes('allianz') || lower.includes('equateplus')) return 'allianz';
+  if (lower.includes('etoro')) return 'etoro';
+  if (lower.includes('degiro')) return 'degiro';
+  if (lower.includes('scalable')) return 'scalable';
+  if (lower.includes('interactive')) return 'interactive_brokers';
+  if (lower.includes('revolut')) return 'revolut';
+  if (lower.includes('coinbase')) return 'coinbase';
+  if (lower.includes('xtb')) return 'xtb';
+  // Check if it's already an ID
+  if (BROKERS.some(br => br.id === b)) return b;
+  return 'otro';
+}
+
 function doImport(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -1279,12 +1265,13 @@ function doImport(event) {
     try {
       const raw = JSON.parse(e.target.result);
       let data;
-      if (raw.version && Array.isArray(raw.transactions)) data = raw.transactions;
+      if (Array.isArray(raw.transactions)) data = raw.transactions;
       else if (Array.isArray(raw)) data = raw;
       else throw new Error('Formato no reconocido');
-      pendingImportData = data;
+      // Normalize all transactions
+      pendingImportData = data.map(normalizeTx);
       document.getElementById('import-info').textContent =
-        'Archivo: ' + data.length + ' transacciones · Actuales: ' + txs.length + ' transacciones';
+        'Archivo: ' + pendingImportData.length + ' transacciones · Actuales: ' + txs.length + ' transacciones';
       document.getElementById('modal-import').classList.add('open');
     } catch (err) { toast('Error: ' + err.message); }
   };
@@ -1295,6 +1282,7 @@ function doImport(event) {
 function execImport(mode) {
   if (!pendingImportData) return;
   if (mode === 'merge') {
+    // Add new transactions, skip duplicates by id
     const existingIds = new Set(txs.map(t => t.id));
     let added = 0;
     pendingImportData.forEach(t => {
@@ -1375,9 +1363,8 @@ function clearAllData() {
 function updateDataInfo() {
   const isins = new Set(txs.filter(t => t.isin).map(t => t.isin));
   const bytes = new Blob([JSON.stringify(txs)]).size;
-  const cloudStatus = fbUser ? ' · ☁️ Sincronizado' : ' · 💾 Solo local';
   document.getElementById('data-info').textContent =
-    txs.length + ' transacciones · ' + isins.size + ' ISINs · ' + (bytes / 1024).toFixed(1) + ' KB' + cloudStatus;
+    txs.length + ' transacciones · ' + isins.size + ' ISINs · ' + (bytes / 1024).toFixed(1) + ' KB' + (fbUser ? ' · ☁️ Sincronizado' : ' · 💾 Solo local');
 }
 
 function toast(msg) {
