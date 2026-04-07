@@ -571,6 +571,7 @@ const STORE_KEY = 'portfolio-v3';
 let txs = [];
 let filterBroker = 'all';
 let editingTxId = null;
+let editingFromIsin = null;
 let detailIsin = null;
 
 /* ===== HELPERS ===== */
@@ -837,7 +838,7 @@ function renderForm(prefill, skipReset) {
   html += '<div class="form-group"><label class="form-label">Notas (opcional)</label><input class="form-input" id="f-notes" value="' + esc(f.notes) + '" placeholder="DCA, plan 10 años..."></div>';
 
   html += '<div style="margin-top:16px"><button class="btn btn-primary" onclick="saveTx()">Guardar</button>';
-  html += '<button class="btn btn-secondary" onclick="goTo(\'portfolio\')">Cancelar</button></div>';
+  html += '<button class="btn btn-secondary" onclick="cancelForm()">Cancelar</button></div>';
 
   document.getElementById('form-content').innerHTML = html;
 
@@ -959,8 +960,14 @@ function saveTx() {
   }
 
   save();
+  const returnTo = editingFromIsin;
   editingTxId = null;
-  goTo('portfolio');
+  editingFromIsin = null;
+  if (returnTo) {
+    showDetail(returnTo);
+  } else {
+    goTo('portfolio');
+  }
 }
 
 /* ===== DETAIL ===== */
@@ -1124,10 +1131,22 @@ function saveGroupTer() {
   closeModal('modal-ter');
 }
 
+function cancelForm() {
+  const returnTo = editingFromIsin;
+  editingTxId = null;
+  editingFromIsin = null;
+  if (returnTo) {
+    showDetail(returnTo);
+  } else {
+    goTo('portfolio');
+  }
+}
+
 function editTx(id) {
   const tx = txs.find(t => t.id === id);
   if (!tx) return;
   editingTxId = id;
+  editingFromIsin = detailIsin || null;
   formData = {
     type: tx.type, name: tx.name, isin: tx.isin || '', broker: tx.broker,
     txType: tx.txType, contribType: tx.contribType || 'ninguno',
