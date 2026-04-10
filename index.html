@@ -1589,7 +1589,11 @@ async function autoSearchTickers() {
   btn.textContent = '🔍 Auto-buscar';
 }
 
-async function fetchYahooPrice(ticker) {
+// ── FX cache: evita fetch repetido para la misma moneda ───────────────────
+const fxRateCache = {}; // { 'USD': 0.924, 'GBP': 1.172, ... }
+
+async function yahooRaw(ticker) {
+  // Devuelve { price, currency } sin conversión
   const proxy = 'https://corsproxy.io/?url=';
   const target = encodeURIComponent(
     'https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1d'
@@ -1597,9 +1601,48 @@ async function fetchYahooPrice(ticker) {
   const resp = await fetch(proxy + target);
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   const data = await resp.json();
-  const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
-  if (!price) throw new Error('Sin precio');
-  return parseFloat(price.toFixed(4));
+  const meta = data?.chart?.result?.[0]?.meta;
+  if (!meta?.regularMarketPrice) throw new Error('Sin precio');
+  return {
+    price: meta.regularMarketPrice,
+    currency: (meta.currency || 'USD').toUpperCase()
+  };
+}
+
+async function getEurRate(currency) {
+  // Devuelve cuántos EUR vale 1 unidad de `currency`
+  if (currency === 'EUR') return 1;
+  if (fxRateCache[currency] !== undefined) return fxRateCache[currency];
+
+  // GBX = peniques de libra (London ETFs) → GBP/100
+  if (currency === 'GBX' || currency === 'GBP' && false) {
+    const gbpRate = await getEurRate('GBP');
+    fxRateCache['GBX'] = gbpRate / 100;
+    return fxRateCache['GBX'];
+  }
+
+  // Pedir tipo de cambio a Yahoo: ej. "USDEUR=X" devuelve cuántos EUR por 1 USD
+  const { price } = await yahooRaw(currency + 'EUR=X');
+  fxRateCache[currency] = price;
+  return price;
+}
+
+async function fetchYahooPrice(ticker) {
+  // Devuelve precio en EUR (con conversión si hace falta) + info para mostrar
+  const { price, currency } = await yahooRaw(ticker);
+
+  // Caso especial: GBX (peniques) → dividir por 100 antes de convertir a EUR
+  let rawPrice = price;
+  let effectiveCurrency = currency;
+  if (currency === 'GBX' || (currency === 'GBP' && ticker.endsWith('.L') && price > 500)) {
+    // LSE cotiza en GBX (pence) si currency=GBX o si es London y precio > 500
+    rawPrice = price / 100;
+    effectiveCurrency = 'GBP';
+  }
+
+  const rate = await getEurRate(effectiveCurrency);
+  const priceEur = parseFloat((rawPrice * rate).toFixed(4));
+  return { priceEur, currency, converted: currency !== 'EUR', rate };
 }
 
 async function fetchCoinGeckoPrice(cgId) {
@@ -1609,7 +1652,7 @@ async function fetchCoinGeckoPrice(cgId) {
   const data = await resp.json();
   const price = data?.[cgId]?.eur;
   if (!price && price !== 0) throw new Error('ID no encontrado');
-  return parseFloat(price.toFixed(6));
+  return { priceEur: parseFloat(price.toFixed(6)), currency: 'EUR', converted: false };
 }
 
 async function fetchAllPrices() {
@@ -1618,12 +1661,13 @@ async function fetchAllPrices() {
   btn.disabled = true;
   btn.textContent = 'Actualizando…';
 
+  // Limpiar caché FX en cada sesión de actualización
+  Object.keys(fxRateCache).forEach(k => delete fxRateCache[k]);
+
   let ok = 0, fail = 0, skip = 0;
   const updates = [];
 
-  const allRows = Array.from(rows);
-  for (let i = 0; i < allRows.length; i++) {
-    const row = allRows[i];
+  for (const row of Array.from(rows)) {
     const key = row.dataset.key;
     const type = row.dataset.type;
     const inp = row.querySelector('.price-ticker-inp');
@@ -1637,21 +1681,30 @@ async function fetchAllPrices() {
     if (priceEl) priceEl.textContent = '';
 
     try {
-      let price;
+      let result;
       if (type === 'Crypto') {
-        const cgId = resolveCryptoId(rawTicker); // ── MEJORA 2 aplicada aquí
-        price = await fetchCoinGeckoPrice(cgId);
-        if (inp) inp.value = cgId; // normalizar el input al ID canónico
+        const cgId = resolveCryptoId(rawTicker);
+        result = await fetchCoinGeckoPrice(cgId);
+        if (inp) inp.value = cgId;
       } else {
-        price = await fetchYahooPrice(rawTicker);
+        result = await fetchYahooPrice(rawTicker);
       }
+
+      const { priceEur, currency, converted, rate } = result;
       statusEl.textContent = '✅';
-      if (priceEl) priceEl.textContent = '€' + price.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-      updates.push({ key, price, ticker: inp ? inp.value.trim() : rawTicker });
+
+      // Mostrar precio + badge de moneda si hubo conversión
+      const fmtPrice = '€' + priceEur.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+      const fxBadge = converted
+        ? ` <span style="font-size:9px;background:#1e3a2f;color:#34d399;border-radius:3px;padding:1px 4px">${currency}→EUR ×${rate.toFixed(4)}</span>`
+        : '';
+      if (priceEl) priceEl.innerHTML = fmtPrice + fxBadge;
+
+      updates.push({ key, price: priceEur, ticker: inp ? inp.value.trim() : rawTicker });
       ok++;
     } catch (e) {
       statusEl.textContent = '❌';
-      if (priceEl) priceEl.textContent = 'Error';
+      if (priceEl) priceEl.textContent = e.message || 'Error';
       fail++;
     }
 
@@ -1672,7 +1725,7 @@ async function fetchAllPrices() {
     renderPortfolio();
   }
 
-  const summary = `${ok} actualizado${ok !== 1 ? 's' : ''}` +
+  const summary = `${ok} actualizado${ok !== 1 ? 's' : ''} en EUR` +
     (fail > 0 ? ` · ${fail} con error` : '') +
     (skip > 0 ? ` · ${skip} sin ticker` : '');
   document.getElementById('price-summary').textContent = summary;
