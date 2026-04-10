@@ -354,8 +354,9 @@ select.form-input { appearance: auto; }
   <div class="modal" style="max-width:520px;width:95vw">
     <h3>🔄 Actualizar precios</h3>
     <p class="price-hint">
-      <b>ETF / Stock / Fund:</b> ticker de Yahoo Finance (ej: <code style="color:var(--accent2)">VWCE.DE</code>, <code style="color:var(--accent2)">AAPL</code>)<br>
-      <b>Crypto:</b> ID de CoinGecko (ej: <code style="color:var(--accent2)">bitcoin</code>, <code style="color:var(--accent2)">ethereum</code>)
+      <b>ETF / Stock:</b> ticker de Yahoo Finance (ej: <code style="color:var(--accent2)">VWCE.DE</code>, <code style="color:var(--accent2)">AAPL</code>) · usa 🔍 para buscar por ISIN<br>
+      <b>Crypto:</b> símbolo corto (ej: <code style="color:var(--accent2)">BTC</code>, <code style="color:var(--accent2)">ETH</code>) o ID CoinGecko (ej: <code style="color:var(--accent2)">bitcoin</code>)<br>
+      <b>Manual</b> (PZE, etc.): precio se actualiza desde la vista detalle
     </p>
     <div class="price-header-row">
       <span></span><span>Posición</span><span>Tipo</span><span>Ticker / ID</span><span></span>
@@ -363,6 +364,7 @@ select.form-input { appearance: auto; }
     <div class="price-modal-body" id="price-rows"></div>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-primary" id="btn-fetch-prices" onclick="fetchAllPrices()">Actualizar todos</button>
+      <button class="btn btn-secondary" id="btn-autosearch" onclick="autoSearchTickers()">🔍 Auto-buscar</button>
       <button class="btn btn-secondary" onclick="closeModal('modal-prices')">Cerrar</button>
     </div>
     <p id="price-summary" style="font-size:11px;color:var(--text3);margin-top:8px;min-height:16px"></p>
@@ -1448,22 +1450,50 @@ const TYPE_TEXT = {
   ETF: '#60a5fa', Stock: '#34d399', Crypto: '#c084fc', Fund: '#a78bfa', Bond: '#fb923c'
 };
 
+// ── MEJORA 2: Mapa símbolo → CoinGecko ID ──────────────────────────────────
+const CRYPTO_SYMBOL_MAP = {
+  btc: 'bitcoin', eth: 'ethereum', sol: 'solana', xrp: 'ripple',
+  ada: 'cardano', bnb: 'binancecoin', doge: 'dogecoin', dot: 'polkadot',
+  avax: 'avalanche-2', matic: 'matic-network', link: 'chainlink',
+  ltc: 'litecoin', uni: 'uniswap', atom: 'cosmos', xlm: 'stellar',
+  algo: 'algorand', icp: 'internet-computer', fil: 'filecoin',
+  near: 'near', apt: 'aptos', arb: 'arbitrum', op: 'optimism',
+  sui: 'sui', inj: 'injective-protocol', sei: 'sei-network',
+  trx: 'tron', shib: 'shiba-inu', pepe: 'pepe', wif: 'dogwifcoin',
+  fet: 'fetch-ai', render: 'render-token', grt: 'the-graph',
+  aave: 'aave', crv: 'curve-dao-token', mkr: 'maker'
+};
+
+function resolveCryptoId(input) {
+  const lower = input.toLowerCase().trim();
+  return CRYPTO_SYMBOL_MAP[lower] || lower; // map or pass-through (user may type ID directly)
+}
+
+// ── MEJORA 1: Detectar posición manual (sin ISIN de mercado) ───────────────
+function isIsinFormat(key) {
+  return /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(key);
+}
+
 function openPriceUpdate() {
-  // Build unique positions map
   const positions = {};
   txs.forEach(tx => {
     const key = tx.isin || tx.id;
     if (!positions[key]) {
-      positions[key] = { key, name: tx.name, type: tx.type, priceTicker: tx.priceTicker || '' };
+      positions[key] = {
+        key,
+        name: tx.name,
+        type: tx.type,
+        priceTicker: tx.priceTicker || '',
+        hasIsin: !!tx.isin && isIsinFormat(tx.isin)
+      };
     }
-    // Use most recent priceTicker
     if (tx.priceTicker) positions[key].priceTicker = tx.priceTicker;
   });
 
   const list = Object.values(positions).sort((a, b) => a.name.localeCompare(b.name));
 
   const placeholder = (type) => {
-    if (type === 'Crypto') return 'bitcoin';
+    if (type === 'Crypto') return 'BTC o bitcoin';
     if (type === 'ETF') return 'VWCE.DE';
     if (type === 'Stock') return 'AAPL';
     return 'TICKER.XX';
@@ -1473,14 +1503,29 @@ function openPriceUpdate() {
   list.forEach((p, i) => {
     const bg = TYPE_COLORS[p.type] || '#1e293b';
     const col = TYPE_TEXT[p.type] || '#94a3b8';
-    html += `<div class="price-row" data-key="${p.key}" data-type="${p.type}">
-      <span class="price-status" id="pst-${i}">—</span>
-      <span class="price-row-name" title="${p.name}">${p.name}</span>
-      <span class="price-row-type" style="background:${bg};color:${col}">${p.type}</span>
-      <input class="price-ticker-inp" id="ptk-${i}" data-idx="${i}" data-key="${p.key}"
-        value="${p.priceTicker}" placeholder="${placeholder(p.type)}">
-      <span id="ppr-${i}" style="font-size:10px;color:var(--text3);white-space:nowrap"></span>
-    </div>`;
+    const isManual = !p.hasIsin && p.type !== 'Crypto';
+
+    if (isManual) {
+      // ── Posición manual (PZE, sin ISIN de mercado) ──
+      html += `<div class="price-row" data-key="${p.key}" data-type="${p.type}" data-manual="1">
+        <span class="price-status" id="pst-${i}">—</span>
+        <span class="price-row-name" title="${p.name}" style="color:var(--text3)">${p.name}</span>
+        <span class="price-row-type" style="background:#1a2540;color:var(--text3)">Manual</span>
+        <input class="price-ticker-inp" id="ptk-${i}" disabled placeholder="Precio manual"
+          style="opacity:0.35;cursor:not-allowed">
+        <span id="ppr-${i}" style="font-size:10px;color:var(--text3)"></span>
+      </div>`;
+    } else {
+      // ── Posición con ticker de mercado ──
+      html += `<div class="price-row" data-key="${p.key}" data-type="${p.type}" data-isin="${p.hasIsin ? p.key : ''}">
+        <span class="price-status" id="pst-${i}">—</span>
+        <span class="price-row-name" title="${p.name}">${p.name}</span>
+        <span class="price-row-type" style="background:${bg};color:${col}">${p.type}</span>
+        <input class="price-ticker-inp" id="ptk-${i}" data-key="${p.key}"
+          value="${p.priceTicker}" placeholder="${placeholder(p.type)}">
+        <span id="ppr-${i}" style="font-size:10px;color:var(--text3);white-space:nowrap"></span>
+      </div>`;
+    }
   });
 
   document.getElementById('price-rows').innerHTML = html || '<p style="color:var(--text3);font-size:13px">No hay posiciones</p>';
@@ -1490,9 +1535,65 @@ function openPriceUpdate() {
   document.getElementById('modal-prices').classList.add('open');
 }
 
+// ── MEJORA 3: Auto-buscar ticker por ISIN vía Yahoo Finance ────────────────
+async function searchYahooTicker(isin) {
+  const proxy = 'https://corsproxy.io/?url=';
+  const target = encodeURIComponent(
+    'https://query2.finance.yahoo.com/v1/finance/search?q=' + isin + '&quotesCount=3&newsCount=0&listsCount=0'
+  );
+  const resp = await fetch(proxy + target);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const data = await resp.json();
+  const quotes = data?.quotes || [];
+  // Prefer equity/ETF matches; skip mutual funds (MUTUALFUND often = wrong match)
+  const best = quotes.find(q => q.quoteType && q.quoteType !== 'MUTUALFUND' && q.symbol) || quotes[0];
+  if (!best?.symbol) throw new Error('No encontrado');
+  return best.symbol;
+}
+
+async function autoSearchTickers() {
+  const rows = document.querySelectorAll('#price-rows .price-row:not([data-manual="1"])');
+  const btn = document.getElementById('btn-autosearch');
+  btn.disabled = true;
+  btn.textContent = '🔍 Buscando…';
+
+  const summaryEl = document.getElementById('price-summary');
+  let found = 0, fail = 0;
+
+  for (let row of rows) {
+    const isin = row.dataset.isin;
+    if (!isin) continue; // no ISIN, skip (Crypto por ejemplo)
+
+    // Find the index from the input id
+    const inp = row.querySelector('.price-ticker-inp');
+    if (!inp || inp.value.trim()) continue; // already has ticker, skip
+
+    const statusEl = row.querySelector('.price-status');
+    statusEl.textContent = '🔍';
+
+    try {
+      const ticker = await searchYahooTicker(isin);
+      inp.value = ticker;
+      statusEl.textContent = '✅';
+      found++;
+    } catch (e) {
+      statusEl.textContent = '❓';
+      fail++;
+    }
+    await new Promise(r => setTimeout(r, 400));
+  }
+
+  summaryEl.textContent = `Auto-búsqueda: ${found} ticker${found !== 1 ? 's' : ''} encontrado${found !== 1 ? 's' : ''}` +
+    (fail > 0 ? ` · ${fail} sin resultado` : '');
+  btn.disabled = false;
+  btn.textContent = '🔍 Auto-buscar';
+}
+
 async function fetchYahooPrice(ticker) {
   const proxy = 'https://corsproxy.io/?url=';
-  const target = encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1d');
+  const target = encodeURIComponent(
+    'https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1d'
+  );
   const resp = await fetch(proxy + target);
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   const data = await resp.json();
@@ -1512,54 +1613,51 @@ async function fetchCoinGeckoPrice(cgId) {
 }
 
 async function fetchAllPrices() {
-  const rows = document.querySelectorAll('#price-rows .price-row');
+  const rows = document.querySelectorAll('#price-rows .price-row:not([data-manual="1"])');
   const btn = document.getElementById('btn-fetch-prices');
   btn.disabled = true;
   btn.textContent = 'Actualizando…';
 
   let ok = 0, fail = 0, skip = 0;
-  const updates = []; // { key, price, ticker }
+  const updates = [];
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
+  const allRows = Array.from(rows);
+  for (let i = 0; i < allRows.length; i++) {
+    const row = allRows[i];
     const key = row.dataset.key;
     const type = row.dataset.type;
-    const tickerInput = document.getElementById('ptk-' + i);
-    const statusEl = document.getElementById('pst-' + i);
-    const priceEl = document.getElementById('ppr-' + i);
-    const ticker = tickerInput ? tickerInput.value.trim() : '';
+    const inp = row.querySelector('.price-ticker-inp');
+    const statusEl = row.querySelector('.price-status');
+    const priceEl = row.querySelector('[id^="ppr-"]');
+    const rawTicker = inp ? inp.value.trim() : '';
 
-    if (!ticker) {
-      statusEl.textContent = '—';
-      skip++;
-      continue;
-    }
+    if (!rawTicker) { statusEl.textContent = '—'; skip++; continue; }
 
     statusEl.textContent = '⏳';
-    priceEl.textContent = '';
+    if (priceEl) priceEl.textContent = '';
 
     try {
       let price;
       if (type === 'Crypto') {
-        price = await fetchCoinGeckoPrice(ticker.toLowerCase());
+        const cgId = resolveCryptoId(rawTicker); // ── MEJORA 2 aplicada aquí
+        price = await fetchCoinGeckoPrice(cgId);
+        if (inp) inp.value = cgId; // normalizar el input al ID canónico
       } else {
-        price = await fetchYahooPrice(ticker);
+        price = await fetchYahooPrice(rawTicker);
       }
       statusEl.textContent = '✅';
-      priceEl.textContent = '€' + price.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-      updates.push({ key, price, ticker });
+      if (priceEl) priceEl.textContent = '€' + price.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+      updates.push({ key, price, ticker: inp ? inp.value.trim() : rawTicker });
       ok++;
     } catch (e) {
       statusEl.textContent = '❌';
-      priceEl.textContent = 'Error';
+      if (priceEl) priceEl.textContent = 'Error';
       fail++;
     }
 
-    // Small delay to avoid rate limiting
     await new Promise(r => setTimeout(r, 300));
   }
 
-  // Apply all updates to txs
   if (updates.length > 0) {
     updates.forEach(({ key, price, ticker }) => {
       txs.forEach(tx => {
