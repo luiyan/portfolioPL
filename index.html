@@ -371,6 +371,18 @@ select.form-input { appearance: auto; }
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-isin">
+  <div class="modal">
+    <h3>Actualizar ISIN</h3>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:12px">Se actualizará en <strong>todas</strong> las transacciones de esta posición</p>
+    <input class="form-input mono" id="edit-isin" placeholder="IE00B4L5Y983" maxlength="24" style="text-transform:uppercase;letter-spacing:1px">
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="saveGroupIsin()">Guardar</button>
+      <button class="btn btn-secondary" onclick="closeModal('modal-isin')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Import mode -->
 <div class="modal-overlay" id="modal-import">
   <div class="modal">
@@ -617,11 +629,13 @@ const ISSUERS = [
 ];
 
 const STORE_KEY = 'portfolio-v3';
+const PLANS_KEY  = 'portfolio-plans';
 let txs = [];
 let filterBroker = 'all';
 let editingTxId = null;
 let editingFromIsin = null;
 let detailIsin = null;
+let scheduledPlans = {}; // { [positionKey]: { active, scheduledDay, name, type, broker, ... } }
 
 /* ===== HELPERS ===== */
 const today = () => new Date().toISOString().slice(0, 10);
@@ -638,12 +652,120 @@ const typeColors = { ETF: '#3b82f6', Stock: '#fbbf24', Bond: '#10b981', Fund: '#
 /* ===== STORAGE ===== */
 function save() {
   localStorage.setItem(STORE_KEY, JSON.stringify(txs));
+  localStorage.setItem(PLANS_KEY, JSON.stringify(scheduledPlans));
   if (fbUser) debouncedCloudSave();
 }
 function init() {
   txs = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
+  scheduledPlans = JSON.parse(localStorage.getItem(PLANS_KEY) || '{}');
+  checkScheduledPositions();
   renderPortfolio();
   initFirebase();
+}
+
+/* ===== AUTO-SCHEDULE ===== */
+function checkScheduledPositions() {
+  const now = new Date();
+  const todayDay = now.getDate();
+  const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'); // "2025-05"
+  let created = 0;
+
+  Object.entries(scheduledPlans).forEach(([key, plan]) => {
+    if (!plan.active || !plan.scheduledDay) return;
+
+    // Only create if today >= scheduledDay
+    if (todayDay < plan.scheduledDay) return;
+
+    // Check if a tx already exists for this position in the current month
+    const alreadyExists = txs.some(t =>
+      (t.isin || t.id) === key &&
+      t.date && t.date.startsWith(ym)
+    );
+    if (alreadyExists) return;
+
+    // Create pending tx for this month
+    const paddedDay = String(plan.scheduledDay).padStart(2, '0');
+    const maxDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const day = Math.min(plan.scheduledDay, maxDay);
+    const txDate = ym + '-' + String(day).padStart(2, '0');
+
+    const newTx = {
+      id: genId(),
+      isin: plan.isin || null,
+      name: plan.name,
+      type: plan.type || 'ETF',
+      broker: plan.broker || 'trade_republic',
+      txType: 'buy',
+      contribType: plan.contribType || 'mensual',
+      cost: 0, units: 0, avgPrice: 0,
+      currentPrice: plan.lastPrice || 0,
+      annualCost: plan.annualCost || 0,
+      sector: plan.sector || 'global',
+      issuer: plan.issuer || 'na',
+      issuerCustom: plan.issuerCustom || '',
+      date: txDate,
+      notes: '📅 Auto-programado',
+      scheduledDay: plan.scheduledDay,
+      pending: true,
+      priceTicker: plan.priceTicker || '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    txs.push(newTx);
+    created++;
+  });
+
+  if (created > 0) {
+    save();
+    if (created === 1) toast('📅 1 aportación mensual creada como pendiente');
+    else toast('📅 ' + created + ' aportaciones mensuales creadas como pendientes');
+  }
+}
+
+function toggleSchedulePlan(isinOrId) {
+  const plan = scheduledPlans[isinOrId];
+  const isActive = plan && plan.active;
+
+  if (isActive) {
+    // Deactivate
+    scheduledPlans[isinOrId] = { ...plan, active: false };
+    save();
+    toast('⏹ Programación parada');
+    showDetail(isinOrId);
+    return;
+  }
+
+  // Activate: build plan from last tx of this position
+  const posTxs = txs.filter(t => (t.isin || t.id) === isinOrId);
+  if (!posTxs.length) return;
+  const ref = [...posTxs].sort((a, b) => b.date.localeCompare(a.date))[0];
+
+  // Find scheduledDay — from existing txs or from ref
+  const dayFromTx = posTxs.find(t => t.scheduledDay)?.scheduledDay;
+  if (!dayFromTx) {
+    toast('Define primero el Día del mes en una transacción mensual');
+    return;
+  }
+
+  scheduledPlans[isinOrId] = {
+    active: true,
+    scheduledDay: dayFromTx,
+    isin: ref.isin || null,
+    name: ref.name,
+    type: ref.type,
+    broker: ref.broker,
+    contribType: ref.contribType || 'mensual',
+    annualCost: ref.annualCost || 0,
+    sector: ref.sector || 'global',
+    issuer: ref.issuer || 'na',
+    issuerCustom: ref.issuerCustom || '',
+    priceTicker: ref.priceTicker || '',
+    lastPrice: ref.currentPrice || 0
+  };
+  save();
+  toast('📅 Programación activa — día ' + dayFromTx + ' de cada mes');
+  showDetail(isinOrId);
 }
 
 /* ===== NAVIGATION ===== */
@@ -1081,12 +1203,23 @@ function showDetail(isinOrId) {
   const terTxs = matchTxs.filter(t => t.annualCost && t.txType === 'buy');
   const avgTer = terTxs.length > 0 ? terTxs[0].annualCost : null;
 
+  const plan = scheduledPlans[isinOrId] || {};
+  const planActive = !!plan.active;
+  const isRecurringPos = matchTxs.some(t => t.contribType === 'mensual' || t.contribType === 'sparplan');
+  const hasScheduledDay = matchTxs.some(t => t.scheduledDay);
+
   let html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">' +
     '<button class="detail-back" onclick="goTo(\'portfolio\')">← Portfolio</button>' +
     '<div class="detail-actions">' +
       '<button onclick="addToPosition(\'' + esc(isinOrId) + '\')">+ Compra</button>' +
       '<button onclick="updateGroupPrice(\'' + esc(isinOrId) + '\')">Actualizar precio</button>' +
       '<button onclick="updateGroupTer(\'' + esc(isinOrId) + '\')">Actualizar TER</button>' +
+      '<button onclick="updateGroupIsin(\'' + esc(isinOrId) + '\')">Actualizar ISIN</button>' +
+      (isRecurringPos && hasScheduledDay
+        ? '<button onclick="toggleSchedulePlan(\'' + esc(isinOrId) + '\')" style="' +
+          (planActive ? 'background:rgba(239,68,68,0.15);color:var(--red);border-color:rgba(239,68,68,0.3)' : 'background:rgba(52,211,153,0.12);color:#34d399;border-color:rgba(52,211,153,0.3)') +
+          '">' + (planActive ? '⏹ Parar auto' : '📅 Programar') + '</button>'
+        : '') +
     '</div></div>';
 
   html += '<h2>' + esc(name) + '</h2>';
@@ -1104,6 +1237,7 @@ function showDetail(isinOrId) {
       (avgTer ? '<div>TER: ' + avgTer + '% anual</div>' : '') +
       '<div>Sector: ' + getSector(latest.sector).label + '</div>' +
       '<div>Emisor: ' + (latest.issuer === 'otro_issuer' ? esc(latest.issuerCustom || 'Otro') : getIssuer(latest.issuer).label) + '</div>' +
+      (planActive ? '<div style="color:#34d399;margin-top:4px">📅 Auto-programado · día ' + plan.scheduledDay + '</div>' : '') +
     '</div></div>' +
   '</div>';
 
@@ -1223,6 +1357,37 @@ function saveGroupTer() {
   toast('✓ TER actualizado para todas las transacciones');
   showDetail(detailIsin);
   closeModal('modal-ter');
+}
+
+function updateGroupIsin(isinOrId) {
+  detailIsin = isinOrId;
+  const tx = txs.find(t => (t.isin || t.id) === isinOrId);
+  const inp = document.getElementById('edit-isin');
+  inp.value = tx && tx.isin ? tx.isin : '';
+  document.getElementById('modal-isin').classList.add('open');
+  setTimeout(() => inp.focus(), 80);
+}
+
+function saveGroupIsin() {
+  const newIsin = document.getElementById('edit-isin').value.trim().toUpperCase();
+  if (!newIsin) return toast('Introduce un ISIN');
+  const oldKey = detailIsin;
+  txs.forEach(t => {
+    if ((t.isin || t.id) === oldKey) {
+      t.isin = newIsin;
+      t.updatedAt = new Date().toISOString();
+    }
+  });
+  // Update plan key if exists
+  if (scheduledPlans[oldKey]) {
+    scheduledPlans[newIsin] = { ...scheduledPlans[oldKey], isin: newIsin };
+    delete scheduledPlans[oldKey];
+  }
+  detailIsin = newIsin;
+  save();
+  toast('✓ ISIN actualizado en todas las transacciones');
+  showDetail(newIsin);
+  closeModal('modal-isin');
 }
 
 function scheduledDayToDate(day) {
