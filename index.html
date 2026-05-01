@@ -631,7 +631,7 @@ const ISSUERS = [
 const STORE_KEY = 'portfolio-v3';
 const PLANS_KEY  = 'portfolio-plans';
 let txs = [];
-let filterBroker = 'all';
+let filterBrokers = new Set(['all']); // 'all' = sin filtro activo
 let editingTxId = null;
 let editingFromIsin = null;
 let detailIsin = null;
@@ -782,8 +782,8 @@ function goTo(page) {
 
 /* ===== GROUPING BY ISIN ===== */
 function getGroups() {
-  let filtered = txs;
-  if (filterBroker !== 'all') filtered = filtered.filter(t => t.broker === filterBroker);
+  const isAll = filterBrokers.has('all');
+  let filtered = isAll ? txs : txs.filter(t => filterBrokers.has(t.broker));
 
   const map = {};
   filtered.forEach(tx => {
@@ -833,7 +833,8 @@ function getGroups() {
 /* ===== PORTFOLIO RENDER ===== */
 function renderPortfolio() {
   const groups = getGroups();
-  const allTxs = filterBroker === 'all' ? txs : txs.filter(t => t.broker === filterBroker);
+  const isAll = filterBrokers.has('all');
+  const allTxs = isAll ? txs : txs.filter(t => filterBrokers.has(t.broker));
 
   const totCost = groups.reduce((s, g) => s + g.totalCost, 0);
   const totCurrent = groups.reduce((s, g) => s + g.currentValue, 0);
@@ -857,16 +858,23 @@ function renderPortfolio() {
     '<div class="card" style="border-left-color:' + (totPnl >= 0 ? 'var(--green)' : 'var(--red)') + '"><span class="card-l">P&L</span><span class="card-v ' + (totPnl >= 0 ? 'up' : 'down') + '">' + (totPnl >= 0 ? '+' : '') + fmt(totPnl) + ' (' + (totPnlPct >= 0 ? '+' : '') + totPnlPct.toFixed(2) + '%)</span></div>' +
     '<div class="card"><span class="card-l">Recurrente / mes</span><span class="card-v sm">' + fmt(monthly) + '</span></div>';
 
-  // Subtitle
-  document.getElementById('port-subtitle').textContent =
-    groups.length + ' posiciones · ' + txs.length + ' transacciones';
+  // Subtitle — show which brokers are active
+  const selLabel = isAll
+    ? groups.length + ' posiciones · ' + txs.length + ' transacciones'
+    : [...filterBrokers].map(b => getBroker(b).label).join(' + ') + ' · ' + groups.length + ' posiciones';
+  document.getElementById('port-subtitle').textContent = selLabel;
 
-  // Filters - brokers
-  let fh = '<button class="filt' + (filterBroker === 'all' ? ' on' : '') + '" style="' + (filterBroker === 'all' ? 'background:var(--accent)' : '') + '" onclick="setFilter(\'all\')">Todos</button>';
+  // Filters — multi-select broker chips
   const usedBrokers = [...new Set(txs.map(t => t.broker))];
+  let fh = '<button class="filt' + (isAll ? ' on' : '') + '" style="' +
+    (isAll ? 'background:var(--accent);color:#fff' : '') +
+    '" onclick="toggleFilter(\'all\')">Todos</button>';
   usedBrokers.forEach(bid => {
     const b = getBroker(bid);
-    fh += '<button class="filt' + (filterBroker === bid ? ' on' : '') + '" style="' + (filterBroker === bid ? 'background:' + b.color : '') + '" onclick="setFilter(\'' + bid + '\')">' + b.label + '</button>';
+    const active = !isAll && filterBrokers.has(bid);
+    fh += '<button class="filt' + (active ? ' on' : '') + '" style="' +
+      (active ? 'background:' + b.color + ';color:#fff' : '') +
+      '" onclick="toggleFilter(\'' + bid + '\')">' + b.label + '</button>';
   });
   document.getElementById('port-filters').innerHTML = fh;
 
@@ -912,7 +920,20 @@ function renderPortfolio() {
   document.getElementById('port-list').innerHTML = html;
 }
 
-function setFilter(f) { filterBroker = f; renderPortfolio(); }
+function toggleFilter(bid) {
+  if (bid === 'all') {
+    filterBrokers = new Set(['all']);
+  } else {
+    filterBrokers.delete('all');
+    if (filterBrokers.has(bid)) {
+      filterBrokers.delete(bid);
+      if (filterBrokers.size === 0) filterBrokers = new Set(['all']); // back to Todos
+    } else {
+      filterBrokers.add(bid);
+    }
+  }
+  renderPortfolio();
+}
 
 /* ===== FORM ===== */
 function resetFormData() {
