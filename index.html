@@ -800,7 +800,7 @@ function resetFormData() {
     txType: 'buy', contribType: 'mensual',
     calcMode: 'price', amount: '', avgPrice: '', units: '', currentPrice: '', annualCost: '',
     sector: 'global', issuer: 'ishares', issuerCustom: '',
-    date: today(), notes: ''
+    date: today(), notes: '', scheduledDay: null, pending: false
   };
 }
 
@@ -822,7 +822,7 @@ function renderForm(prefill, skipReset) {
   const isCrypto = f.type === 'Crypto';
   const idLabel = isCrypto ? 'Ticker' : 'ISIN';
   const idPlaceholder = isCrypto ? 'BTC, ETH, SOL...' : 'IE00B4L5Y983';
-  const idMaxlen = isCrypto ? '10' : '12';
+  const idMaxlen = isCrypto ? '20' : '24';
 
   let html = '';
 
@@ -851,7 +851,29 @@ function renderForm(prefill, skipReset) {
   '</div></div>';
 
   // Contribution type only (amount derived from importe invertido)
-  html += '<div class="form-group"><label class="form-label">Tipo de aporte</label><select class="form-input" id="f-ctype">' + contribOpts + '</select></div>';
+  html += '<div class="form-group"><label class="form-label">Tipo de aporte</label><select class="form-input" id="f-ctype" onchange="readForm();formData.contribType=this.value;renderForm(null,true)">' + contribOpts + '</select></div>';
+
+  // Día del mes + Pendiente — solo para mensual/sparplan
+  const isRecurring = f.contribType === 'mensual' || f.contribType === 'sparplan';
+  if (isRecurring) {
+    html += '<div class="form-row">';
+    html += '<div class="form-group"><label class="form-label">Día del mes</label>' +
+      '<input class="form-input" id="f-schedday" type="number" min="1" max="31" value="' + (f.scheduledDay || '') + '" placeholder="Ej: 15" ' +
+      'onchange="readForm();formData.scheduledDay=parseInt(this.value)||null;if(formData.scheduledDay){formData.date=scheduledDayToDate(formData.scheduledDay);}renderForm(null,true)">' +
+      '</div>';
+    html += '<div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:4px">' +
+      '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text2)">' +
+      '<input type="checkbox" id="f-pending" ' + (f.pending ? 'checked' : '') + ' ' +
+      'style="width:16px;height:16px;accent-color:var(--accent2);cursor:pointer" ' +
+      'onchange="readForm();formData.pending=this.checked;renderForm(null,true)">' +
+      '<span>⏳ Pendiente<br><span style="font-size:10px;color:var(--text3)">Guardar sin importe exacto</span></span>' +
+      '</label></div>';
+    html += '</div>';
+    if (f.scheduledDay) {
+      const nextDate = scheduledDayToDate(f.scheduledDay);
+      html += '<div style="font-size:11px;color:var(--accent2);margin:-4px 0 10px 0">📅 Próxima ejecución: <strong>' + nextDate + '</strong></div>';
+    }
+  }
 
   // Calc mode toggle
   html += '<div class="form-group"><label class="form-label">Datos disponibles</label><div class="form-toggle">' +
@@ -859,8 +881,9 @@ function renderForm(prefill, skipReset) {
     '<button class="tog-btn' + (f.calcMode === 'units' ? ' active' : '') + '" onclick="readForm();formData.calcMode=\'units\';renderForm(null,true)">Importe + Unidades</button>' +
   '</div></div>';
 
-  // Amount always shown
-  html += '<div class="form-row"><div class="form-group"><label class="form-label">Importe invertido (€)</label><input class="form-input" id="f-amount" type="number" step="0.01" value="' + (f.amount || '') + '" placeholder="5000.00"></div>';
+  // Amount always shown — optional if pending
+  const pendingHint = f.pending ? ' <span style="font-size:10px;color:var(--text3)">(opcional si pendiente)</span>' : '';
+  html += '<div class="form-row"><div class="form-group"><label class="form-label">Importe invertido (€)' + pendingHint + '</label><input class="form-input" id="f-amount" type="number" step="0.01" value="' + (f.amount || '') + '" placeholder="' + (f.pending ? '0.00 — actualizar después' : '5000.00') + '"></div>';
 
   if (f.calcMode === 'price') {
     // Mode: Amount + Price → calc Units
@@ -952,6 +975,10 @@ function readForm() {
   formData.issuerCustom = g('f-issuer-custom') || '';
   formData.date = g('f-date') || today();
   formData.notes = g('f-notes') || '';
+  const sdEl = document.getElementById('f-schedday');
+  if (sdEl) formData.scheduledDay = parseInt(sdEl.value) || null;
+  const pdEl = document.getElementById('f-pending');
+  if (pdEl) formData.pending = pdEl.checked;
 }
 
 function saveTx() {
@@ -960,19 +987,21 @@ function saveTx() {
   if (!f.name) return toast('Introduce un nombre');
 
   const amount = parseFloat(f.amount) || 0;
-  if (amount <= 0) return toast('Introduce un importe invertido');
+  if (amount <= 0 && !f.pending) return toast('Introduce un importe invertido');
 
   let units, avgPrice;
-  if (f.calcMode === 'units') {
-    // Amount + Units → calc Price
+  if (f.pending && amount === 0) {
+    // Pendiente: guardar con ceros, el usuario actualiza después
+    units = 0;
+    avgPrice = 0;
+  } else if (f.calcMode === 'units') {
     units = parseFloat(f.units) || 0;
-    if (units <= 0) return toast('Introduce las unidades compradas');
-    avgPrice = parseFloat((amount / units).toFixed(6));
+    if (units <= 0 && !f.pending) return toast('Introduce las unidades compradas');
+    avgPrice = units > 0 ? parseFloat((amount / units).toFixed(6)) : 0;
   } else {
-    // Amount + Price → calc Units
     avgPrice = parseFloat(f.avgPrice) || 0;
-    if (avgPrice <= 0) return toast('Introduce un precio de compra');
-    units = parseFloat((amount / avgPrice).toFixed(6));
+    if (avgPrice <= 0 && !f.pending) return toast('Introduce un precio de compra');
+    units = avgPrice > 0 ? parseFloat((amount / avgPrice).toFixed(6)) : 0;
   }
 
   const currentPrice = parseFloat(f.currentPrice) || avgPrice;
@@ -995,6 +1024,9 @@ function saveTx() {
     issuerCustom: f.issuer === 'otro_issuer' ? f.issuerCustom : '',
     date: f.date,
     notes: f.notes,
+    scheduledDay: f.scheduledDay || null,
+    pending: !!f.pending,
+    priceTicker: (txs.find(t => t.id === editingTxId) || {}).priceTicker || '',
     createdAt: editingTxId ? (txs.find(t => t.id === editingTxId) || {}).createdAt || new Date().toISOString() : new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -1083,20 +1115,33 @@ function showDetail(isinOrId) {
     const isRec = tx.contribType === 'mensual' || tx.contribType === 'sparplan';
     const bc = isRec ? 'badge-m' : tx.contribType === 'puntual' ? 'badge-p' : 'badge-n';
 
+    const pendingBadge = tx.pending
+      ? '<span style="background:#422006;color:#fb923c;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;letter-spacing:0.3px">⏳ PENDIENTE</span>'
+      : '';
+    const schedInfo = tx.scheduledDay
+      ? '<span style="font-size:10px;color:var(--text3)"> · Día ' + tx.scheduledDay + ' del mes</span>'
+      : '';
+
     html += '<div class="tx-item">' +
       '<div class="tx-left">' +
-        '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px">' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:3px">' +
           '<span class="tx-type-tag ' + tx.txType + '">' + (tx.txType === 'buy' ? 'Compra' : 'Venta') + '</span>' +
           '<span style="font-size:11px;color:var(--text3)">' + tx.date + '</span>' +
           '<span class="badge ' + bc + '">' + contrib.label + '</span>' +
+          pendingBadge +
         '</div>' +
-        (tx.units ? '<div style="font-size:11px;color:var(--text2)">' + tx.units.toFixed(6) + ' uds × ' + fmt(tx.avgPrice) + '</div>' : '') +
+        (tx.pending && !tx.units
+          ? '<div style="font-size:11px;color:#fb923c">Sin importe — actualizar al ejecutarse</div>'
+          : (tx.units ? '<div style="font-size:11px;color:var(--text2)">' + tx.units.toFixed(6) + ' uds × ' + fmt(tx.avgPrice) + '</div>' : '')) +
         '<div style="font-size:11px;color:var(--text3)">' + getBroker(tx.broker).label +
           (tx.annualCost ? ' · TER: ' + tx.annualCost + '%' : '') +
+          schedInfo +
           (tx.notes ? ' · ' + esc(tx.notes) : '') + '</div>' +
       '</div>' +
       '<div class="tx-right">' +
-        '<div style="font-size:14px;font-weight:700">' + fmt(tx.cost) + '</div>' +
+        '<div style="font-size:14px;font-weight:700;color:' + (tx.pending ? '#fb923c' : 'inherit') + '">' +
+          (tx.pending && tx.cost === 0 ? '—' : fmt(tx.cost)) +
+        '</div>' +
       '</div>' +
       '<div class="tx-actions">' +
         '<button class="tx-act-btn" onclick="event.stopPropagation();editTx(\'' + tx.id + '\')">Editar</button>' +
@@ -1180,6 +1225,19 @@ function saveGroupTer() {
   closeModal('modal-ter');
 }
 
+function scheduledDayToDate(day) {
+  // Returns YYYY-MM-DD for the next occurrence of `day` in current or next month
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth(); // 0-indexed month
+  const candidate = new Date(y, m, day);
+  // If day already passed this month, use next month
+  if (candidate <= now) {
+    const next = new Date(y, m + 1, day);
+    return next.toISOString().slice(0, 10);
+  }
+  return candidate.toISOString().slice(0, 10);
+}
+
 function cancelForm() {
   const returnTo = editingFromIsin;
   editingTxId = null;
@@ -1203,7 +1261,8 @@ function editTx(id) {
     amount: tx.cost || '', avgPrice: tx.avgPrice || '', units: tx.units || '',
     currentPrice: tx.currentPrice || '', annualCost: tx.annualCost || '',
     sector: tx.sector || 'global', issuer: tx.issuer || 'na', issuerCustom: tx.issuerCustom || '',
-    date: tx.date, notes: tx.notes || ''
+    date: tx.date, notes: tx.notes || '',
+    scheduledDay: tx.scheduledDay || null, pending: !!tx.pending
   };
   document.getElementById('form-title').textContent = 'Editar transacción';
   goTo('add');
@@ -1303,6 +1362,8 @@ function normalizeTx(t) {
     date: t.date || today(),
     notes: t.notes || '',
     priceTicker: t.priceTicker || '',
+    scheduledDay: t.scheduledDay || null,
+    pending: !!t.pending,
     createdAt: t.createdAt || new Date().toISOString(),
     updatedAt: t.updatedAt || new Date().toISOString()
   };
