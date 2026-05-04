@@ -383,6 +383,28 @@ select.form-input { appearance: auto; }
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-distributions">
+  <div class="modal">
+    <h3>💰 Distribuciones recibidas</h3>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:4px">Total acumulado recibido en cupones/dividendos (€).<br>Se resta del coste para calcular el P&L real.</p>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:12px;padding:8px;background:var(--bg3);border-radius:6px;line-height:1.6">
+      Coste invertido: <span id="distrib-cost" style="color:var(--text)"></span><br>
+      Distribuciones actuales: <span id="distrib-current" style="color:#34d399"></span><br>
+      Coste efectivo: <span id="distrib-effective" style="color:var(--accent2)"></span>
+    </div>
+    <label class="form-label">Total distribuciones acumuladas (€)</label>
+    <input class="form-input" id="edit-distrib" type="number" step="0.01" min="0" placeholder="0.00"
+      oninput="previewDistrib()">
+    <p id="distrib-preview" style="font-size:11px;color:var(--text3);margin-top:6px;min-height:16px"></p>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="saveDistributions()">Guardar</button>
+      <button class="btn btn-secondary" onclick="closeModal('modal-distributions')">Cancelar</button>
+      <button class="btn btn-secondary" style="color:var(--red);border-color:rgba(239,68,68,0.3)"
+        onclick="document.getElementById('edit-distrib').value='';previewDistrib()">Resetear</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Import mode -->
 <div class="modal-overlay" id="modal-import">
   <div class="modal">
@@ -630,12 +652,14 @@ const ISSUERS = [
 
 const STORE_KEY = 'portfolio-v3';
 const PLANS_KEY  = 'portfolio-plans';
+const DISTRIB_KEY = 'portfolio-distributions';
 let txs = [];
 let filterBrokers = new Set(['all']); // 'all' = sin filtro activo
 let editingTxId = null;
 let editingFromIsin = null;
 let detailIsin = null;
 let scheduledPlans = {}; // { [positionKey]: { active, scheduledDay, name, type, broker, ... } }
+let distributions = {}; // { [positionKey]: totalEurReceived }
 
 /* ===== HELPERS ===== */
 const today = () => new Date().toISOString().slice(0, 10);
@@ -653,11 +677,13 @@ const typeColors = { ETF: '#3b82f6', Stock: '#fbbf24', Bond: '#10b981', Fund: '#
 function save() {
   localStorage.setItem(STORE_KEY, JSON.stringify(txs));
   localStorage.setItem(PLANS_KEY, JSON.stringify(scheduledPlans));
+  localStorage.setItem(DISTRIB_KEY, JSON.stringify(distributions));
   if (fbUser) debouncedCloudSave();
 }
 function init() {
   txs = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
   scheduledPlans = JSON.parse(localStorage.getItem(PLANS_KEY) || '{}');
+  distributions = JSON.parse(localStorage.getItem(DISTRIB_KEY) || '{}');
   checkScheduledPositions();
   renderPortfolio();
   initFirebase();
@@ -822,10 +848,15 @@ function getGroups() {
   });
 
   return Object.values(map).map(g => {
-    g.avgPrice = g.totalUnits > 0 ? g.totalCost / g.totalUnits : 0;
+    const key = g.isin || g.txs[0]?.id;
+    const distrib = distributions[key] || 0;
+    const effectiveCost = Math.max(0, g.totalCost - distrib);
+    g.avgPrice = g.totalUnits > 0 ? effectiveCost / g.totalUnits : 0;
     g.currentValue = g.totalUnits * g.currentPrice;
-    g.pnl = g.currentValue - g.totalCost;
-    g.pnlPct = g.totalCost > 0 ? (g.pnl / g.totalCost) * 100 : 0;
+    g.pnl = g.currentValue - effectiveCost;
+    g.pnlPct = effectiveCost > 0 ? (g.pnl / effectiveCost) * 100 : 0;
+    g.distributions = distrib;
+    g.effectiveCost = effectiveCost;
     return g;
   }).sort((a, b) => b.currentValue - a.currentValue);
 }
@@ -1215,10 +1246,12 @@ function showDetail(isinOrId) {
   const latest = sorted[0];
   name = latest.name; type = latest.type;
   currentPrice = latest.currentPrice || 0;
-  const avgPrice = totalUnits > 0 ? totalCost / totalUnits : 0;
+  const distrib = distributions[isinOrId] || 0;
+  const effectiveCost = Math.max(0, totalCost - distrib);
+  const avgPrice = totalUnits > 0 ? effectiveCost / totalUnits : 0;
   const currentValue = totalUnits * currentPrice;
-  const pnl = currentValue - totalCost;
-  const pnlPct = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
+  const pnl = currentValue - effectiveCost;
+  const pnlPct = effectiveCost > 0 ? (pnl / effectiveCost) * 100 : 0;
   const detailBrokers = [...new Set(matchTxs.map(t => t.broker))].map(b => getBroker(b).label).join(', ');
   // Weighted average TER
   const terTxs = matchTxs.filter(t => t.annualCost && t.txType === 'buy');
@@ -1236,6 +1269,9 @@ function showDetail(isinOrId) {
       '<button onclick="updateGroupPrice(\'' + esc(isinOrId) + '\')">Actualizar precio</button>' +
       '<button onclick="updateGroupTer(\'' + esc(isinOrId) + '\')">Actualizar TER</button>' +
       '<button onclick="updateGroupIsin(\'' + esc(isinOrId) + '\')">Actualizar ISIN</button>' +
+      '<button onclick="updateDistributions(\'' + esc(isinOrId) + '\')" style="' +
+        (distributions[isinOrId] ? 'background:rgba(52,211,153,0.12);color:#34d399;border-color:rgba(52,211,153,0.3)' : '') +
+        '">💰 Distribuciones</button>' +
       (isRecurringPos && hasScheduledDay
         ? '<button onclick="toggleSchedulePlan(\'' + esc(isinOrId) + '\')" style="' +
           (planActive ? 'background:rgba(239,68,68,0.15);color:var(--red);border-color:rgba(239,68,68,0.3)' : 'background:rgba(52,211,153,0.12);color:#34d399;border-color:rgba(52,211,153,0.3)') +
@@ -1248,13 +1284,18 @@ function showDetail(isinOrId) {
 
   // Summary cards
   html += '<div class="cards">' +
-    '<div class="card"><span class="card-l">Invertido</span><span class="card-v sm">' + fmt(totalCost) + '</span></div>' +
+    '<div class="card"><span class="card-l">Invertido</span><span class="card-v sm">' + fmt(totalCost) +
+      (distrib > 0 ? '<br><span style="font-size:10px;color:#34d399">−' + fmt(distrib) + ' distribuciones<br>Efectivo: ' + fmt(effectiveCost) + '</span>' : '') +
+    '</span></div>' +
     '<div class="card"><span class="card-l">Valor actual</span><span class="card-v sm">' + fmt(currentValue) + '</span></div>' +
-    '<div class="card" style="border-left-color:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '"><span class="card-l">P&L</span><span class="card-v sm ' + (pnl >= 0 ? 'up' : 'down') + '">' + (pnl >= 0 ? '+' : '') + fmt(pnl) + ' (' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%)</span></div>' +
+    '<div class="card" style="border-left-color:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '"><span class="card-l">P&L' +
+      (distrib > 0 ? ' <span style="font-size:9px;background:#14532d;color:#34d399;padding:1px 4px;border-radius:3px">+distribuciones</span>' : '') +
+    '</span><span class="card-v sm ' + (pnl >= 0 ? 'up' : 'down') + '">' + (pnl >= 0 ? '+' : '') + fmt(pnl) + ' (' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%)</span></div>' +
     '<div class="card"><span class="card-l">Info</span><div style="margin-top:4px;font-size:11px;color:var(--text2)">' +
       '<div>Broker: ' + detailBrokers + '</div>' +
       (totalUnits ? '<div>Uds: ' + totalUnits.toFixed(6) + ' · P.medio: ' + fmt(avgPrice) + '</div>' : '') +
       '<div>P.actual: ' + fmt(currentPrice) + '</div>' +
+      (distrib > 0 ? '<div style="color:#34d399">Distribuciones: +' + fmt(distrib) + '</div>' : '') +
       (avgTer ? '<div>TER: ' + avgTer + '% anual</div>' : '') +
       '<div>Sector: ' + getSector(latest.sector).label + '</div>' +
       '<div>Emisor: ' + (latest.issuer === 'otro_issuer' ? esc(latest.issuerCustom || 'Otro') : getIssuer(latest.issuer).label) + '</div>' +
@@ -1409,6 +1450,50 @@ function saveGroupIsin() {
   toast('✓ ISIN actualizado en todas las transacciones');
   showDetail(newIsin);
   closeModal('modal-isin');
+}
+
+function updateDistributions(isinOrId) {
+  detailIsin = isinOrId;
+  // Calculate total invested for this position
+  const posTxs = txs.filter(t => (t.isin || t.id) === isinOrId);
+  let totalCost = 0;
+  posTxs.forEach(t => { totalCost += t.txType === 'sell' ? -t.cost : t.cost; });
+  const current = distributions[isinOrId] || 0;
+  const effective = Math.max(0, totalCost - current);
+
+  document.getElementById('distrib-cost').textContent = fmt(totalCost);
+  document.getElementById('distrib-current').textContent = current > 0 ? '+' + fmt(current) : '—';
+  document.getElementById('distrib-effective').textContent = fmt(effective);
+  document.getElementById('edit-distrib').value = current > 0 ? current : '';
+  document.getElementById('distrib-preview').textContent = '';
+  document.getElementById('modal-distributions').classList.add('open');
+  setTimeout(() => document.getElementById('edit-distrib').focus(), 80);
+}
+
+function previewDistrib() {
+  const val = parseFloat(document.getElementById('edit-distrib').value) || 0;
+  const posTxs = txs.filter(t => (t.isin || t.id) === detailIsin);
+  let totalCost = 0;
+  posTxs.forEach(t => { totalCost += t.txType === 'sell' ? -t.cost : t.cost; });
+  const newEffective = Math.max(0, totalCost - val);
+  document.getElementById('distrib-preview').textContent = val > 0
+    ? '→ Coste efectivo: ' + fmt(newEffective) + ' (ahorro fiscal: ' + fmt(val) + ')'
+    : '';
+}
+
+function saveDistributions() {
+  const val = parseFloat(document.getElementById('edit-distrib').value) || 0;
+  if (val < 0) return toast('El importe no puede ser negativo');
+  if (val === 0) {
+    delete distributions[detailIsin];
+  } else {
+    distributions[detailIsin] = val;
+  }
+  save();
+  toast(val > 0 ? '✓ Distribuciones: ' + fmt(val) + ' aplicadas al P&L' : '✓ Distribuciones reseteadas');
+  showDetail(detailIsin);
+  renderPortfolio();
+  closeModal('modal-distributions');
 }
 
 function scheduledDayToDate(day) {
