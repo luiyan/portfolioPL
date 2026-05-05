@@ -405,6 +405,29 @@ select.form-input { appearance: auto; }
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-pnl-override">
+  <div class="modal">
+    <h3>⚖️ Ajuste manual de P&L</h3>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:10px">
+      Introduce el P&L exacto que muestra tu broker.<br>
+      La app usará este valor en lugar del calculado.<br>
+      <span style="color:#fb923c">Mientras esté activo, los cambios de precio no afectan el P&L mostrado.</span>
+    </p>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:12px;padding:8px;background:var(--bg3);border-radius:6px;line-height:1.7">
+      P&L calculado por la app: <span id="override-calc" style="color:var(--text)"></span><br>
+      Ajuste activo: <span id="override-current" style="color:#fb923c"></span>
+    </div>
+    <label class="form-label">P&L según tu broker (€) — negativo si es pérdida</label>
+    <input class="form-input" id="edit-override" type="number" step="0.01" placeholder="-1.90"
+      oninput="previewOverride()">
+    <p id="override-preview" style="font-size:11px;color:var(--text3);margin-top:6px;min-height:16px"></p>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="savePnlOverride()">Guardar</button>
+      <button class="btn btn-secondary" onclick="closeModal('modal-pnl-override')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Import mode -->
 <div class="modal-overlay" id="modal-import">
   <div class="modal">
@@ -652,7 +675,8 @@ const ISSUERS = [
 
 const STORE_KEY = 'portfolio-v3';
 const PLANS_KEY  = 'portfolio-plans';
-const DISTRIB_KEY = 'portfolio-distributions';
+const DISTRIB_KEY   = 'portfolio-distributions';
+const OVERRIDE_KEY  = 'portfolio-pnl-overrides';
 let txs = [];
 let filterBrokers = new Set(['all']); // 'all' = sin filtro activo
 let editingTxId = null;
@@ -660,6 +684,7 @@ let editingFromIsin = null;
 let detailIsin = null;
 let scheduledPlans = {}; // { [positionKey]: { active, scheduledDay, name, type, broker, ... } }
 let distributions = {}; // { [positionKey]: totalEurReceived }
+let pnlOverrides  = {}; // { [positionKey]: { pnl, source, date } }
 
 /* ===== HELPERS ===== */
 const today = () => new Date().toISOString().slice(0, 10);
@@ -678,12 +703,14 @@ function save() {
   localStorage.setItem(STORE_KEY, JSON.stringify(txs));
   localStorage.setItem(PLANS_KEY, JSON.stringify(scheduledPlans));
   localStorage.setItem(DISTRIB_KEY, JSON.stringify(distributions));
+  localStorage.setItem(OVERRIDE_KEY, JSON.stringify(pnlOverrides));
   if (fbUser) debouncedCloudSave();
 }
 function init() {
   txs = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
   scheduledPlans = JSON.parse(localStorage.getItem(PLANS_KEY) || '{}');
   distributions = JSON.parse(localStorage.getItem(DISTRIB_KEY) || '{}');
+  pnlOverrides  = JSON.parse(localStorage.getItem(OVERRIDE_KEY) || '{}');
   checkScheduledPositions();
   renderPortfolio();
   initFirebase();
@@ -851,10 +878,19 @@ function getGroups() {
     const key = g.isin || g.txs[0]?.id;
     const distrib = distributions[key] || 0;
     const effectiveCost = Math.max(0, g.totalCost - distrib);
-    g.avgPrice = g.totalUnits > 0 ? effectiveCost / g.totalUnits : 0;
     g.currentValue = g.totalUnits * g.currentPrice;
-    g.pnl = g.currentValue - effectiveCost;
-    g.pnlPct = effectiveCost > 0 ? (g.pnl / effectiveCost) * 100 : 0;
+    const override = pnlOverrides[key];
+    if (override) {
+      g.pnl        = override.pnl;
+      g.pnlPct     = effectiveCost > 0 ? (override.pnl / effectiveCost) * 100 : 0;
+      g.currentValue = effectiveCost + override.pnl; // derive from manual P&L
+      g.pnlMode    = 'manual';
+    } else {
+      g.pnl        = g.currentValue - effectiveCost;
+      g.pnlPct     = effectiveCost > 0 ? (g.pnl / effectiveCost) * 100 : 0;
+      g.pnlMode    = 'calc';
+    }
+    g.avgPrice      = g.totalUnits > 0 ? effectiveCost / g.totalUnits : 0;
     g.distributions = distrib;
     g.effectiveCost = effectiveCost;
     return g;
@@ -1248,10 +1284,12 @@ function showDetail(isinOrId) {
   currentPrice = latest.currentPrice || 0;
   const distrib = distributions[isinOrId] || 0;
   const effectiveCost = Math.max(0, totalCost - distrib);
-  const avgPrice = totalUnits > 0 ? effectiveCost / totalUnits : 0;
-  const currentValue = totalUnits * currentPrice;
-  const pnl = currentValue - effectiveCost;
-  const pnlPct = effectiveCost > 0 ? (pnl / effectiveCost) * 100 : 0;
+  const override = pnlOverrides[isinOrId];
+  const pnl        = override ? override.pnl : (totalUnits * currentPrice) - effectiveCost;
+  const currentValue = effectiveCost + pnl; // always consistent: invested + P&L
+  const avgPrice    = totalUnits > 0 ? effectiveCost / totalUnits : 0;
+  const pnlPct      = effectiveCost > 0 ? (pnl / effectiveCost) * 100 : 0;
+  const pnlMode     = override ? 'manual' : 'calc';
   const detailBrokers = [...new Set(matchTxs.map(t => t.broker))].map(b => getBroker(b).label).join(', ');
   // Weighted average TER
   const terTxs = matchTxs.filter(t => t.annualCost && t.txType === 'buy');
@@ -1272,6 +1310,9 @@ function showDetail(isinOrId) {
       '<button onclick="updateDistributions(\'' + esc(isinOrId) + '\')" style="' +
         (distributions[isinOrId] ? 'background:rgba(52,211,153,0.12);color:#34d399;border-color:rgba(52,211,153,0.3)' : '') +
         '">💰 Distribuciones</button>' +
+      '<button onclick="openPnlOverride(\'' + esc(isinOrId) + '\')" style="' +
+        (pnlOverrides[isinOrId] ? 'background:rgba(251,146,60,0.12);color:#fb923c;border-color:rgba(251,146,60,0.3)' : '') +
+        '">⚖️ Ajuste P&L</button>' +
       (isRecurringPos && hasScheduledDay
         ? '<button onclick="toggleSchedulePlan(\'' + esc(isinOrId) + '\')" style="' +
           (planActive ? 'background:rgba(239,68,68,0.15);color:var(--red);border-color:rgba(239,68,68,0.3)' : 'background:rgba(52,211,153,0.12);color:#34d399;border-color:rgba(52,211,153,0.3)') +
@@ -1287,10 +1328,23 @@ function showDetail(isinOrId) {
     '<div class="card"><span class="card-l">Invertido</span><span class="card-v sm">' + fmt(totalCost) +
       (distrib > 0 ? '<br><span style="font-size:10px;color:#34d399">−' + fmt(distrib) + ' distribuciones<br>Efectivo: ' + fmt(effectiveCost) + '</span>' : '') +
     '</span></div>' +
-    '<div class="card"><span class="card-l">Valor actual</span><span class="card-v sm">' + fmt(currentValue) + '</span></div>' +
-    '<div class="card" style="border-left-color:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '"><span class="card-l">P&L' +
-      (distrib > 0 ? ' <span style="font-size:9px;background:#14532d;color:#34d399;padding:1px 4px;border-radius:3px">+distribuciones</span>' : '') +
-    '</span><span class="card-v sm ' + (pnl >= 0 ? 'up' : 'down') + '">' + (pnl >= 0 ? '+' : '') + fmt(pnl) + ' (' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%)</span></div>' +
+    '<div class="card"><span class="card-l">Valor actual' +
+      (pnlMode === 'manual' ? ' <span style="font-size:9px;background:#422006;color:#fb923c;padding:1px 4px;border-radius:3px">⚖️</span>' : '') +
+    '</span><span class="card-v sm">' + fmt(currentValue) + '</span></div>' +
+    '<div class="card" style="border-left-color:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '">' +
+      '<span class="card-l">P&L ' +
+        (pnlMode === 'manual'
+          ? '<span style="font-size:9px;background:#422006;color:#fb923c;padding:1px 5px;border-radius:3px">⚖️ Manual</span>'
+          : (distrib > 0 ? '<span style="font-size:9px;background:#14532d;color:#34d399;padding:1px 4px;border-radius:3px">+dist.</span>' : '')) +
+      '</span>' +
+      '<span class="card-v sm ' + (pnl >= 0 ? 'up' : 'down') + '">' +
+        (pnl >= 0 ? '+' : '') + fmt(pnl) + ' (' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%)' +
+      '</span>' +
+      (pnlMode === 'manual'
+        ? '<div style="margin-top:6px"><button onclick="clearPnlOverride(\'' + esc(isinOrId) + '\')" ' +
+          'style="font-size:10px;background:rgba(239,68,68,0.1);color:var(--red);border:1px solid rgba(239,68,68,0.3);border-radius:5px;padding:3px 8px;cursor:pointer">↺ Recalcular</button></div>'
+        : '') +
+    '</div>' +
     '<div class="card"><span class="card-l">Info</span><div style="margin-top:4px;font-size:11px;color:var(--text2)">' +
       '<div>Broker: ' + detailBrokers + '</div>' +
       (totalUnits ? '<div>Uds: ' + totalUnits.toFixed(6) + ' · P.medio: ' + fmt(avgPrice) + '</div>' : '') +
@@ -1450,6 +1504,60 @@ function saveGroupIsin() {
   toast('✓ ISIN actualizado en todas las transacciones');
   showDetail(newIsin);
   closeModal('modal-isin');
+}
+
+function openPnlOverride(isinOrId) {
+  detailIsin = isinOrId;
+  // Calculate current app P&L for comparison
+  const posTxs = txs.filter(t => (t.isin || t.id) === isinOrId);
+  let totalCost = 0, totalUnits = 0, currentPrice = 0;
+  const sorted = [...posTxs].sort((a, b) => b.date.localeCompare(a.date));
+  sorted.forEach(t => {
+    if (t.txType === 'sell') { totalCost -= t.cost; totalUnits -= (t.units || 0); }
+    else { totalCost += t.cost; totalUnits += (t.units || 0); }
+  });
+  if (sorted[0]) currentPrice = sorted[0].currentPrice || 0;
+  const distrib = distributions[isinOrId] || 0;
+  const effectiveCost = Math.max(0, totalCost - distrib);
+  const calcPnl = (totalUnits * currentPrice) - effectiveCost;
+
+  const existing = pnlOverrides[isinOrId];
+  document.getElementById('override-calc').textContent =
+    (calcPnl >= 0 ? '+' : '') + fmt(calcPnl);
+  document.getElementById('override-current').textContent =
+    existing ? (existing.pnl >= 0 ? '+' : '') + fmt(existing.pnl) + ' (activo)' : '—';
+  document.getElementById('edit-override').value = existing ? existing.pnl : '';
+  document.getElementById('override-preview').textContent = '';
+  document.getElementById('modal-pnl-override').classList.add('open');
+  setTimeout(() => document.getElementById('edit-override').focus(), 80);
+}
+
+function previewOverride() {
+  const val = parseFloat(document.getElementById('edit-override').value);
+  if (isNaN(val)) { document.getElementById('override-preview').textContent = ''; return; }
+  document.getElementById('override-preview').textContent =
+    'Se mostrará: ' + (val >= 0 ? '+' : '') + fmt(val) + ' · Badge ⚖️ Manual activo';
+}
+
+function savePnlOverride() {
+  const raw = document.getElementById('edit-override').value.trim();
+  if (raw === '') return toast('Introduce el P&L de tu broker');
+  const val = parseFloat(raw);
+  if (isNaN(val)) return toast('Valor no válido');
+  pnlOverrides[detailIsin] = { pnl: val, date: new Date().toISOString().slice(0, 10) };
+  save();
+  toast('⚖️ P&L manual guardado: ' + (val >= 0 ? '+' : '') + fmt(val));
+  showDetail(detailIsin);
+  renderPortfolio();
+  closeModal('modal-pnl-override');
+}
+
+function clearPnlOverride(isinOrId) {
+  delete pnlOverrides[isinOrId];
+  save();
+  toast('↺ P&L recalculado por la app');
+  showDetail(isinOrId);
+  renderPortfolio();
 }
 
 function updateDistributions(isinOrId) {
