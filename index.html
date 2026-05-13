@@ -444,6 +444,27 @@ select.form-input { appearance: auto; }
   </div>
 </div>
 
+<!-- MODAL: Plan Value (bAV Gesamtwert) -->
+<div class="modal-overlay" id="modal-planvalue">
+  <div class="modal">
+    <h3>📊 Valor del plan (Gesamtwert)</h3>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:4px">Introduce el <strong>Gesamtwert der Rückdeckung</strong> de la carta anual de Allianz.</p>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:12px;padding:8px;background:var(--bg3);border-radius:6px;line-height:1.7" id="planval-info"></div>
+    <label class="form-label">Gesamtwert (€)</label>
+    <input class="form-input" id="edit-planval" type="number" step="0.01" placeholder="9413.77" oninput="previewPlanVal()">
+    <p id="planval-preview" style="font-size:11px;color:var(--text3);margin-top:6px;min-height:16px"></p>
+    <label class="form-label" style="margin-top:10px">Fecha de la carta</label>
+    <input class="form-input" id="edit-planval-date" type="date">
+    <label class="form-label" style="margin-top:10px">Nota (opcional)</label>
+    <input class="form-input" id="edit-planval-note" placeholder="Standmitteilung 31.12.2025">
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="savePlanValue()">Guardar</button>
+      <button class="btn btn-secondary" onclick="closeModal('modal-planvalue')">Cancelar</button>
+      <button class="btn btn-secondary" style="color:var(--red);border-color:rgba(239,68,68,0.3)" onclick="clearPlanValue()">Eliminar</button>
+    </div>
+  </div>
+</div>
+
 <!-- NAV -->
 <nav class="nav">
   <button class="nav-btn active" onclick="goTo('portfolio')" data-page="portfolio">
@@ -626,11 +647,13 @@ const BROKERS = [
   { id:"revolut", label:"Revolut", color:"#6C63FF" },
   { id:"coinbase", label:"Coinbase", color:"#0052FF" },
   { id:"xtb", label:"XTB", color:"#00A651" },
+  { id:"equateplus", label:"EquatePlus", color:"#005EB8" },
   { id:"otro", label:"Otro", color:"#6B7280" }
 ];
 const CONTRIBS = [
-  { id:"mensual", label:"Mensual" },
+  { id:"mensual", label:"Mensual (EE)" },
   { id:"sparplan", label:"Sparplan" },
+  { id:"employer_subsidy", label:"Subsidio AG (Zuschuss)" },
   { id:"puntual", label:"Puntual" },
   { id:"ninguno", label:"Sin aporte" }
 ];
@@ -674,7 +697,6 @@ const ISSUERS = [
   { id:"lyxor", label:"Lyxor" },
   { id:"hsbc", label:"HSBC" },
   { id:"ubs", label:"UBS" },
-  { id:"equateplus", label:"EquatePlus (Computershare)" },
   { id:"allianz_pze", label:"Allianz PZE / bAV" },
   { id:"na", label:"N/A (Acción / Crypto)" },
   { id:"otro_issuer", label:"Otro" }
@@ -685,15 +707,17 @@ const PLANS_KEY  = 'portfolio-plans';
 const DISTRIB_KEY   = 'portfolio-distributions';
 const OVERRIDE_KEY  = 'portfolio-pnl-overrides';
 const SETTINGS_KEY  = 'portfolio-settings';
+const PLANVAL_KEY   = 'portfolio-planvalues';
 let txs = [];
-let filterBrokers = new Set(['all']); // 'all' = sin filtro activo
+let filterBrokers = new Set(['all']);
 let editingTxId = null;
 let editingFromIsin = null;
 let detailIsin = null;
-let scheduledPlans = {}; // { [positionKey]: { active, scheduledDay, name, type, broker, ... } }
-let distributions = {}; // { [positionKey]: totalEurReceived }
-let pnlOverrides  = {}; // { [positionKey]: { pnl, source, date } }
-let positionSettings = {}; // { [positionKey]: { excludeFromGlobal: bool } }
+let scheduledPlans = {};
+let distributions = {};
+let pnlOverrides  = {};
+let positionSettings = {};
+let planValues = {}; // { [positionKey]: { value: number, date: string, note: string } }
 
 /* ===== HELPERS ===== */
 const today = () => new Date().toISOString().slice(0, 10);
@@ -714,6 +738,7 @@ function save() {
   localStorage.setItem(DISTRIB_KEY, JSON.stringify(distributions));
   localStorage.setItem(OVERRIDE_KEY, JSON.stringify(pnlOverrides));
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(positionSettings));
+  localStorage.setItem(PLANVAL_KEY, JSON.stringify(planValues));
   if (fbUser) debouncedCloudSave();
 }
 function init() {
@@ -722,6 +747,7 @@ function init() {
   distributions = JSON.parse(localStorage.getItem(DISTRIB_KEY) || '{}');
   pnlOverrides  = JSON.parse(localStorage.getItem(OVERRIDE_KEY) || '{}');
   positionSettings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+  planValues    = JSON.parse(localStorage.getItem(PLANVAL_KEY) || '{}');
   checkScheduledPositions();
   renderPortfolio();
   initFirebase();
@@ -885,45 +911,66 @@ function getGroups() {
 
     // ── Compute running cost basis (FIFO average) to get realized P&L ──
     const sortedTxs = [...g.txs].sort((a, b) => a.date.localeCompare(b.date));
-    let runningCost = 0, runningUnits = 0, realizedPnl = 0, totalEmployerSubsidy = 0;
+    let runningCost = 0, runningUnits = 0, realizedPnl = 0;
+    let totalEE = 0, totalER = 0; // bAV: EE = Entgeltumwandlung, ER = Arbeitgeberzuschuss
     for (const tx of sortedTxs) {
-      totalEmployerSubsidy += (tx.employerSubsidy || 0);
+      // Separate ER (employer subsidy) from EE contributions
+      const isER = tx.contribType === 'employer_subsidy';
+      if (isER) {
+        totalER += (tx.cost || 0);
+        // Also track in running cost for P&L purposes
+        runningCost += tx.cost;
+        runningUnits += (tx.units || 0);
+        continue;
+      }
       if (tx.txType === 'sell') {
         const avgCostPerUnit = runningUnits > 0 ? runningCost / runningUnits : 0;
         const basisForSold = avgCostPerUnit * (tx.units || 0);
-        realizedPnl += tx.cost - basisForSold; // proceeds - cost basis
+        realizedPnl += tx.cost - basisForSold;
         runningCost = Math.max(0, runningCost - basisForSold);
         runningUnits = Math.max(0, runningUnits - (tx.units || 0));
       } else {
         runningCost += tx.cost;
         runningUnits += (tx.units || 0);
+        totalEE += tx.cost;
       }
     }
 
-    g.totalCost = runningCost;       // remaining cost basis (open position)
+    g.totalCost = runningCost;
     g.totalUnits = runningUnits;
     g.realizedPnl = realizedPnl;
-    g.totalEmployerSubsidy = totalEmployerSubsidy;
+    g.totalEE = totalEE;
+    g.totalER = totalER;
+    g.totalEmployerSubsidy = totalER; // backward compat alias
     g.isClosed = runningUnits < 0.000001 && realizedPnl !== 0;
 
     const distrib = distributions[key] || 0;
     const effectiveCost = Math.max(0, g.totalCost - distrib);
-
-    // For Pension type: currentValue comes from manual override only
     const isPension = g.type === 'Pension';
-    g.currentValue = isPension ? effectiveCost : g.totalUnits * g.currentPrice;
+
+    // For Pension: currentValue comes from planValues (annual letter) or fallback to cost
+    const pv = planValues[key];
+    g.currentValue = isPension
+      ? (pv ? pv.value : (totalEE + totalER)) // planValue or total invested if no letter yet
+      : g.totalUnits * g.currentPrice;
 
     const override = pnlOverrides[key];
-    if (override) {
+    if (isPension) {
+      // Pension P&L: planValue - (EE + ER). Only meaningful if planValue has been set.
+      const totalInvested = totalEE + totalER;
+      const rawPnl = pv ? (pv.value - totalInvested) : 0;
+      g.pnl        = rawPnl;
+      g.pnlPct     = totalInvested > 0 ? (rawPnl / totalInvested) * 100 : 0;
+      g.pnlMode    = pv ? 'plan' : 'none';
+    } else if (override) {
       g.pnl        = override.pnl + realizedPnl;
-      g.pnlPct     = effectiveCost > 0 ? (g.pnl / (effectiveCost + totalEmployerSubsidy)) * 100 : 0;
+      g.pnlPct     = effectiveCost > 0 ? (g.pnl / effectiveCost) * 100 : 0;
       g.currentValue = effectiveCost + override.pnl;
       g.pnlMode    = 'manual';
     } else {
       const unrealized = g.currentValue - effectiveCost;
       g.pnl        = unrealized + realizedPnl;
-      g.pnlPct     = (effectiveCost + totalEmployerSubsidy) > 0
-        ? (g.pnl / (effectiveCost + totalEmployerSubsidy)) * 100 : 0;
+      g.pnlPct     = effectiveCost > 0 ? (g.pnl / effectiveCost) * 100 : 0;
       g.pnlMode    = 'calc';
     }
     g.avgPrice      = g.totalUnits > 0 ? effectiveCost / g.totalUnits : 0;
@@ -1036,7 +1083,8 @@ function renderPortfolio() {
           ? '<div class="pos-current" style="color:var(--text3);font-size:12px">Cerrado</div>'
           : '<div class="pos-current">' + fmt(g.currentValue) + '</div>') +
         '<div class="pos-pnl ' + (g.pnl >= 0 ? 'up' : 'down') + '">' +
-          (g.pnl >= 0 ? '+' : '') + fmt(g.pnl) + '</div>' +
+          (g.pnlMode === 'none' ? '<span style="color:var(--text3);font-size:10px">Sin carta anual</span>' :
+           (g.pnl >= 0 ? '+' : '') + fmt(g.pnl)) + '</div>' +
       '</div>' +
     '</div>';
   });
@@ -1102,8 +1150,19 @@ function renderForm(prefill, skipReset) {
   html += '<div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="f-name" value="' + esc(f.name) + '" placeholder="' + (isCrypto ? 'Bitcoin, Ethereum...' : 'iShares Core MSCI World') + '"></div>';
 
   // Broker + Sector
-  html += '<div class="form-row"><div class="form-group"><label class="form-label">Broker</label><select class="form-input" id="f-broker">' + brokerOpts + '</select></div>';
+  html += '<div class="form-row"><div class="form-group"><label class="form-label">Broker</label><select class="form-input" id="f-broker" onchange="readForm();formData.broker=this.value;renderForm(null,true)">' + brokerOpts + '</select></div>';
   html += '<div class="form-group"><label class="form-label">Sector</label><select class="form-input" id="f-sector">' + sectorOpts + '</select></div></div>';
+
+  // bAV hint when type=Pension and broker=allianz
+  const isBav = f.type === 'Pension' && f.broker === 'allianz';
+  if (isBav) {
+    html += '<div style="background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.25);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#c4b5fd;line-height:1.6">' +
+      '<strong>🏦 Modo bAV / Pensión activo</strong><br>' +
+      'Registra tus aportaciones EE (Entgeltumwandlung) con <em>Tipo de aporte: Mensual (EE)</em>.<br>' +
+      'Para el Arbeitgeberzuschuss usa <em>Tipo de aporte: Subsidio AG (Zuschuss)</em> como transacción separada.<br>' +
+      'El valor actual se actualiza desde el detalle con <em>📊 Valor del plan</em> al recibir la carta anual.' +
+    '</div>';
+  }
 
   // Issuer + custom
   html += '<div class="form-row"><div class="form-group"><label class="form-label">Emisor / Issuer</label><select class="form-input" id="f-issuer" onchange="readForm();formData.issuer=this.value;renderForm(null,true)">' + issuerOpts + '</select></div>';
@@ -1165,16 +1224,14 @@ function renderForm(prefill, skipReset) {
     html += '<div style="font-size:12px;color:var(--accent2);margin:-6px 0 12px 0;padding:0 2px" data-calc-preview>Precio compra calculado: <strong>€' + previewPrice + '</strong></div>';
   }
 
-  // Current price
-  html += '<div class="form-group"><label class="form-label">Precio actual / ud (€) — Current price</label><input class="form-input" id="f-curprice" type="number" step="0.01" value="' + (f.currentPrice || '') + '" placeholder="90.25"></div>';
+  // Current price — hide for Pension (no market price; value comes from annual letter)
+  if (f.type !== 'Pension') {
+    html += '<div class="form-group"><label class="form-label">Precio actual / ud (€) — Current price</label><input class="form-input" id="f-curprice" type="number" step="0.01" value="' + (f.currentPrice || '') + '" placeholder="90.25"></div>';
+  }
 
-  // Annual cost %
-  html += '<div class="form-group"><label class="form-label">Coste anual (%) — TER / Annual cost</label><input class="form-input" id="f-annualcost" type="number" step="0.01" value="' + (f.annualCost || '') + '" placeholder="0.22"></div>';
-
-  // Employer subsidy — shown for Pension type or Allianz broker
-  if (f.type === 'Pension' || f.broker === 'allianz') {
-    html += '<div class="form-group"><label class="form-label" style="color:#a78bfa">Subsidio empleador / Arbeitgeberzuschuss (€) <span style="font-size:10px;color:var(--text3)">opcional</span></label>' +
-      '<input class="form-input" id="f-employer-subsidy" type="number" step="0.01" value="' + (f.employerSubsidy || '') + '" placeholder="0.00" style="border-color:rgba(139,92,246,0.3)"></div>';
+  // Annual cost % — hide for Pension (no TER concept)
+  if (f.type !== 'Pension') {
+    html += '<div class="form-group"><label class="form-label">Coste anual (%) — TER / Annual cost</label><input class="form-input" id="f-annualcost" type="number" step="0.01" value="' + (f.annualCost || '') + '" placeholder="0.22"></div>';
   }
 
   // Date (own row)
@@ -1333,11 +1390,18 @@ function showDetail(isinOrId) {
   const matchTxs = txs.filter(t => (t.isin || t.id) === isinOrId);
   if (!matchTxs.length) return;
 
-  // Build group with proper cost basis (FIFO average) — same logic as getGroups
+  // Build group with proper cost basis — same logic as getGroups
   const sortedForBasis = [...matchTxs].sort((a, b) => a.date.localeCompare(b.date));
-  let runningCost = 0, runningUnits = 0, realizedPnl = 0, totalEmployerSubsidy = 0;
+  let runningCost = 0, runningUnits = 0, realizedPnl = 0;
+  let totalEE = 0, totalER = 0;
   for (const tx of sortedForBasis) {
-    totalEmployerSubsidy += (tx.employerSubsidy || 0);
+    const isER = tx.contribType === 'employer_subsidy';
+    if (isER) {
+      totalER += (tx.cost || 0);
+      runningCost += tx.cost;
+      runningUnits += (tx.units || 0);
+      continue;
+    }
     if (tx.txType === 'sell') {
       const avgCostPerUnit = runningUnits > 0 ? runningCost / runningUnits : 0;
       const basisForSold = avgCostPerUnit * (tx.units || 0);
@@ -1347,6 +1411,7 @@ function showDetail(isinOrId) {
     } else {
       runningCost += tx.cost;
       runningUnits += (tx.units || 0);
+      totalEE += tx.cost;
     }
   }
   const sorted = [...matchTxs].sort((a, b) => b.date.localeCompare(a.date));
@@ -1355,16 +1420,29 @@ function showDetail(isinOrId) {
   const currentPrice = latest.currentPrice || 0;
   const isPension = type === 'Pension';
   const isClosed = runningUnits < 0.000001 && realizedPnl !== 0;
+  const totalInvested = totalEE + totalER; // for Pension = EE + ER
 
   const distrib = distributions[isinOrId] || 0;
   const effectiveCost = Math.max(0, runningCost - distrib);
+  const pv = planValues[isinOrId]; // annual letter value (Gesamtwert)
   const override = pnlOverrides[isinOrId];
-  const currentValue = isPension ? effectiveCost : (runningUnits * currentPrice);
-  const unrealizedPnl = isPension ? (override ? override.pnl : 0) : (currentValue - effectiveCost);
-  const pnl = (override ? override.pnl : unrealizedPnl) + realizedPnl;
-  const totalInvested = effectiveCost + totalEmployerSubsidy;
-  const pnlPct = totalInvested > 0 ? (pnl / totalInvested) * 100 : 0;
-  const pnlMode = override ? 'manual' : 'calc';
+
+  // Valor actual y P&L según tipo
+  let currentValue, pnl, pnlPct, pnlMode;
+  if (isPension) {
+    currentValue = pv ? pv.value : totalInvested;
+    pnl = pv ? (pv.value - totalInvested) : 0;
+    pnlPct = totalInvested > 0 ? (pnl / totalInvested) * 100 : 0;
+    pnlMode = pv ? 'plan' : 'none';
+  } else {
+    currentValue = runningUnits * currentPrice;
+    const unrealizedPnl = currentValue - effectiveCost;
+    pnl = (override ? override.pnl : unrealizedPnl) + realizedPnl;
+    pnlPct = effectiveCost > 0 ? (pnl / effectiveCost) * 100 : 0;
+    pnlMode = override ? 'manual' : 'calc';
+    if (override) currentValue = effectiveCost + override.pnl;
+  }
+
   const avgPrice = runningUnits > 0 ? effectiveCost / runningUnits : 0;
   const detailBrokers = [...new Set(matchTxs.map(t => t.broker))].map(b => getBroker(b).label).join(', ');
   const terTxs = matchTxs.filter(t => t.annualCost && t.txType === 'buy');
@@ -1381,6 +1459,7 @@ function showDetail(isinOrId) {
     '<div class="detail-actions">' +
       '<button onclick="addToPosition(\'' + esc(isinOrId) + '\')">+ Compra</button>' +
       (!isPension ? '<button onclick="updateGroupPrice(\'' + esc(isinOrId) + '\')">Actualizar precio</button>' : '') +
+      (isPension ? '<button onclick="openPlanValue(\'' + esc(isinOrId) + '\')" style="background:rgba(139,92,246,0.15);color:#a78bfa;border-color:rgba(139,92,246,0.4)">📊 Valor del plan</button>' : '') +
       '<button onclick="updateGroupTer(\'' + esc(isinOrId) + '\')">Actualizar TER</button>' +
       '<button onclick="updateGroupIsin(\'' + esc(isinOrId) + '\')">Actualizar ISIN</button>' +
       '<button onclick="updateDistributions(\'' + esc(isinOrId) + '\')" style="' +
@@ -1403,36 +1482,57 @@ function showDetail(isinOrId) {
   if (latest.isin) html += '<p style="font-family:monospace;color:var(--accent2);font-size:12px;margin-bottom:14px">' + (latest.type === 'Crypto' ? 'Ticker: ' : 'ISIN: ') + esc(latest.isin) + '</p>';
 
   // ── Summary cards ──
-  html += '<div class="cards">' +
-    '<div class="card"><span class="card-l">' + (isPension ? 'Aportado EE' : 'Invertido') + '</span><span class="card-v sm">' + fmt(runningCost) +
+  html += '<div class="cards">';
+  if (isPension) {
+    html += '<div class="card"><span class="card-l">Entgeltumwandlung (EE)</span><span class="card-v sm">' + fmt(totalEE) + '</span></div>';
+    html += '<div class="card" style="border-left-color:rgba(139,92,246,0.5)"><span class="card-l" style="color:#a78bfa">Arbeitgeberzuschuss (ER)</span>' +
+      (totalER > 0
+        ? '<span class="card-v sm" style="color:#a78bfa">' + fmt(totalER) + '</span>'
+        : '<span style="font-size:10px;color:var(--text3)">Añadir como tx aparte</span>') +
+    '</div>';
+    html += '<div class="card"><span class="card-l">Total aportado</span><span class="card-v sm">' + fmt(totalInvested) + '</span></div>';
+    const pvDate = pv ? ' <span style="font-size:9px;color:var(--text3)">· ' + pv.date + '</span>' : '';
+    html += '<div class="card" style="border-left-color:var(--accent)"><span class="card-l">Gesamtwert' + pvDate + '</span>' +
+      (pv
+        ? '<span class="card-v sm">' + fmt(pv.value) + '</span>' + (pv.note ? '<span style="font-size:10px;color:var(--text3);display:block">' + esc(pv.note) + '</span>' : '')
+        : '<span style="font-size:11px;color:var(--text3)">— pendiente carta anual</span><div style="margin-top:4px"><button onclick="openPlanValue(\'' + esc(isinOrId) + '\')" style="font-size:11px;background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.3);border-radius:5px;padding:3px 8px;cursor:pointer">📊 Introducir valor</button></div>') +
+    '</div>';
+    // P&L for bAV
+    if (pnlMode === 'plan') {
+      html += '<div class="card" style="border-left-color:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '"><span class="card-l">P&L <span style="font-size:9px;background:rgba(139,92,246,0.2);color:#a78bfa;padding:1px 5px;border-radius:3px">📊 Carta</span></span>' +
+        '<span class="card-v sm ' + (pnl >= 0 ? 'up' : 'down') + '">' + (pnl >= 0 ? '+' : '') + fmt(pnl) + ' (' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%)</span>' +
+        '<div style="font-size:10px;color:var(--text3);margin-top:3px">Gesamtwert − Total aportado</div>' +
+      '</div>';
+    } else {
+      html += '<div class="card"><span class="card-l">P&L</span><span style="font-size:11px;color:var(--text3)">Disponible al introducir el Gesamtwert</span></div>';
+    }
+  } else {
+    html += '<div class="card"><span class="card-l">Invertido</span><span class="card-v sm">' + fmt(runningCost) +
       (distrib > 0 ? '<br><span style="font-size:10px;color:#34d399">−' + fmt(distrib) + ' distribuciones<br>Efectivo: ' + fmt(effectiveCost) + '</span>' : '') +
-      (totalEmployerSubsidy > 0 ? '<br><span style="font-size:10px;color:#a78bfa">+' + fmt(totalEmployerSubsidy) + ' empleador</span>' : '') +
     '</span></div>';
-  if (!isClosed) {
-    html += '<div class="card"><span class="card-l">Valor actual' +
-      (pnlMode === 'manual' ? ' <span style="font-size:9px;background:#422006;color:#fb923c;padding:1px 4px;border-radius:3px">⚖️</span>' : '') +
-    '</span><span class="card-v sm">' + fmt(isPension ? (effectiveCost + (override ? override.pnl : 0)) : currentValue) + '</span></div>';
+    if (!isClosed) {
+      html += '<div class="card"><span class="card-l">Valor actual' +
+        (pnlMode === 'manual' ? ' <span style="font-size:9px;background:#422006;color:#fb923c;padding:1px 4px;border-radius:3px">⚖️</span>' : '') +
+      '</span><span class="card-v sm">' + fmt(currentValue) + '</span></div>';
+    }
+    html += '<div class="card" style="border-left-color:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '">' +
+      '<span class="card-l">P&L ' +
+        (pnlMode === 'manual' ? '<span style="font-size:9px;background:#422006;color:#fb923c;padding:1px 5px;border-radius:3px">⚖️ Manual</span>'
+         : distrib > 0 ? '<span style="font-size:9px;background:#14532d;color:#34d399;padding:1px 4px;border-radius:3px">+dist.</span>' : '') +
+      '</span>' +
+      '<span class="card-v sm ' + (pnl >= 0 ? 'up' : 'down') + '">' + (pnl >= 0 ? '+' : '') + fmt(pnl) + ' (' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%)</span>' +
+      (realizedPnl !== 0 ? '<div style="margin-top:5px;font-size:10px;color:var(--text3)">⚡ Realizado: <span style="color:' + (realizedPnl >= 0 ? '#34d399' : 'var(--red)') + '">' + (realizedPnl >= 0 ? '+' : '') + fmt(realizedPnl) + '</span>' +
+        (pnl !== realizedPnl ? ' · No real.: <span style="color:' + ((pnl-realizedPnl) >= 0 ? '#34d399' : 'var(--red)') + '">' + ((pnl-realizedPnl) >= 0 ? '+' : '') + fmt(pnl-realizedPnl) + '</span>' : '') +
+      '</div>' : '') +
+      (pnlMode === 'manual' ? '<div style="margin-top:6px"><button onclick="clearPnlOverride(\'' + esc(isinOrId) + '\')" style="font-size:10px;background:rgba(239,68,68,0.1);color:var(--red);border:1px solid rgba(239,68,68,0.3);border-radius:5px;padding:3px 8px;cursor:pointer">↺ Recalcular</button></div>' : '') +
+    '</div>';
   }
-  html += '<div class="card" style="border-left-color:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '">' +
-    '<span class="card-l">P&L ' +
-      (pnlMode === 'manual' ? '<span style="font-size:9px;background:#422006;color:#fb923c;padding:1px 5px;border-radius:3px">⚖️ Manual</span>'
-       : distrib > 0 ? '<span style="font-size:9px;background:#14532d;color:#34d399;padding:1px 4px;border-radius:3px">+dist.</span>' : '') +
-    '</span>' +
-    '<span class="card-v sm ' + (pnl >= 0 ? 'up' : 'down') + '">' +
-      (pnl >= 0 ? '+' : '') + fmt(pnl) + ' (' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%)' +
-    '</span>' +
-    (realizedPnl !== 0 ? '<div style="margin-top:5px;font-size:10px;color:var(--text3)">⚡ Realizado: <span style="color:' + (realizedPnl >= 0 ? '#34d399' : 'var(--red)') + '">' + (realizedPnl >= 0 ? '+' : '') + fmt(realizedPnl) + '</span>' +
-      (pnl !== realizedPnl ? ' · No real.: <span style="color:' + ((pnl-realizedPnl) >= 0 ? '#34d399' : 'var(--red)') + '">' + ((pnl-realizedPnl) >= 0 ? '+' : '') + fmt(pnl-realizedPnl) + '</span>' : '') +
-    '</div>' : '') +
-    (pnlMode === 'manual' ? '<div style="margin-top:6px"><button onclick="clearPnlOverride(\'' + esc(isinOrId) + '\')" style="font-size:10px;background:rgba(239,68,68,0.1);color:var(--red);border:1px solid rgba(239,68,68,0.3);border-radius:5px;padding:3px 8px;cursor:pointer">↺ Recalcular</button></div>' : '') +
-  '</div>' +
-  '<div class="card"><span class="card-l">Info</span><div style="margin-top:4px;font-size:11px;color:var(--text2)">' +
+  html += '<div class="card"><span class="card-l">Info</span><div style="margin-top:4px;font-size:11px;color:var(--text2)">' +
     '<div>Broker: ' + detailBrokers + '</div>' +
     (isExcluded ? '<div style="color:var(--text3)">🙈 Excluido del total global</div>' : '') +
     (runningUnits && !isClosed ? '<div>Uds: ' + runningUnits.toFixed(6) + ' · P.medio: ' + fmt(avgPrice) + '</div>' : '') +
     (!isClosed && !isPension ? '<div>P.actual: ' + fmt(currentPrice) + '</div>' : '') +
     (distrib > 0 ? '<div style="color:#34d399">Distribuciones: +' + fmt(distrib) + '</div>' : '') +
-    (totalEmployerSubsidy > 0 ? '<div style="color:#a78bfa">Subsidio empleador: +' + fmt(totalEmployerSubsidy) + '</div>' : '') +
     (avgTer ? '<div>TER: ' + avgTer + '% anual</div>' : '') +
     '<div>Sector: ' + getSector(latest.sector).label + '</div>' +
     '<div>Emisor: ' + (latest.issuer === 'otro_issuer' ? esc(latest.issuerCustom || 'Otro') : getIssuer(latest.issuer).label) + '</div>' +
@@ -1443,9 +1543,10 @@ function showDetail(isinOrId) {
   html += '<div class="section-title">Transacciones (' + sorted.length + ')</div>';
   html += '<div class="tx-list">';
   sorted.forEach(tx => {
+    const isER = tx.contribType === 'employer_subsidy';
     const contrib = getContrib(tx.contribType);
     const isRec = tx.contribType === 'mensual' || tx.contribType === 'sparplan';
-    const bc = isRec ? 'badge-m' : tx.contribType === 'puntual' ? 'badge-p' : 'badge-n';
+    const bc = isRec ? 'badge-m' : (isER ? 'badge-p' : tx.contribType === 'puntual' ? 'badge-p' : 'badge-n');
     const isSell = tx.txType === 'sell';
 
     const pendingBadge = tx.pending
@@ -1454,8 +1555,8 @@ function showDetail(isinOrId) {
     const schedInfo = tx.scheduledDay
       ? '<span style="font-size:10px;color:var(--text3)"> · Día ' + tx.scheduledDay + ' del mes</span>'
       : '';
-    const erInfo = tx.employerSubsidy > 0
-      ? '<span style="font-size:10px;color:#a78bfa"> · ER: +' + fmt(tx.employerSubsidy) + '</span>'
+    const erInfo = isER
+      ? '<span style="font-size:10px;color:#a78bfa"> · Arbeitgeberzuschuss</span>'
       : '';
 
     html += '<div class="tx-item">' +
@@ -1776,13 +1877,84 @@ function toggleExcludeFromGlobal(isinOrId) {
   renderPortfolio();
 }
 
+function openPlanValue(isinOrId) {
+  detailIsin = isinOrId;
+  // Compute EE + ER totals for preview
+  const matchTxs = txs.filter(t => (t.isin || t.id) === isinOrId);
+  let totalEE = 0, totalER = 0;
+  matchTxs.forEach(tx => {
+    if (tx.contribType === 'employer_subsidy') totalER += (tx.cost || 0);
+    else if (tx.txType === 'buy') totalEE += (tx.cost || 0);
+  });
+  const totalInvested = totalEE + totalER;
+  const pv = planValues[isinOrId];
+
+  document.getElementById('planval-info').innerHTML =
+    'EE (Entgeltumwandlung): <strong>' + fmt(totalEE) + '</strong><br>' +
+    'ER (Arbeitgeberzuschuss): <strong style="color:#a78bfa">' + fmt(totalER) + '</strong><br>' +
+    'Total aportado: <strong>' + fmt(totalInvested) + '</strong>';
+
+  document.getElementById('edit-planval').value = pv ? pv.value : '';
+  document.getElementById('edit-planval-date').value = pv ? pv.date : today();
+  document.getElementById('edit-planval-note').value = pv ? (pv.note || '') : '';
+  document.getElementById('planval-preview').textContent = '';
+  document.getElementById('modal-planvalue').classList.add('open');
+}
+
+function previewPlanVal() {
+  const val = parseFloat(document.getElementById('edit-planval').value) || 0;
+  const matchTxs = txs.filter(t => (t.isin || t.id) === detailIsin);
+  let totalEE = 0, totalER = 0;
+  matchTxs.forEach(tx => {
+    if (tx.contribType === 'employer_subsidy') totalER += (tx.cost || 0);
+    else if (tx.txType === 'buy') totalEE += (tx.cost || 0);
+  });
+  const totalInvested = totalEE + totalER;
+  if (val > 0 && totalInvested > 0) {
+    const pnl = val - totalInvested;
+    const pct = (pnl / totalInvested * 100).toFixed(2);
+    document.getElementById('planval-preview').innerHTML =
+      'P&L → <strong style="color:' + (pnl >= 0 ? '#34d399' : '#ef4444') + '">' + (pnl >= 0 ? '+' : '') + fmt(pnl) + ' (' + (pnl >= 0 ? '+' : '') + pct + '%)</strong>';
+  }
+}
+
+function savePlanValue() {
+  const val = parseFloat(document.getElementById('edit-planval').value);
+  if (!val || val <= 0) return toast('Introduce un valor válido');
+  planValues[detailIsin] = {
+    value: val,
+    date: document.getElementById('edit-planval-date').value || today(),
+    note: document.getElementById('edit-planval-note').value.trim()
+  };
+  save();
+  toast('✓ Gesamtwert actualizado: ' + fmt(val));
+  closeModal('modal-planvalue');
+  showDetail(detailIsin);
+  renderPortfolio();
+}
+
+function clearPlanValue() {
+  delete planValues[detailIsin];
+  save();
+  toast('↺ Valor del plan eliminado');
+  closeModal('modal-planvalue');
+  showDetail(detailIsin);
+  renderPortfolio();
+}
+
 /* ===== IMPORT / EXPORT ===== */
 async function doExport(format) {
   if (!txs.length) return toast('No hay datos');
   let content, filename, type;
 
   if (format === 'json') {
-    content = JSON.stringify({ version: 3, exportDate: new Date().toISOString(), transactions: txs }, null, 2);
+    content = JSON.stringify({
+      version: 3,
+      exportDate: new Date().toISOString(),
+      transactions: txs,
+      planValues: planValues,
+      positionSettings: positionSettings
+    }, null, 2);
     filename = 'portfolio-' + today() + '.json';
     type = 'application/json';
   } else {
@@ -1816,6 +1988,7 @@ async function doExport(format) {
 }
 
 let pendingImportData = null;
+let pendingImportExtra = null;
 
 // Normalize transactions from different JSON formats
 function normalizeTx(t) {
@@ -1851,7 +2024,8 @@ function normalizeBroker(b) {
   const lower = b.toLowerCase();
   if (lower.includes('trade republic')) return 'trade_republic';
   if (lower.includes('n26')) return 'n26';
-  if (lower.includes('allianz') || lower.includes('equateplus')) return 'allianz';
+  if (lower.includes('allianz')) return 'allianz';
+  if (lower.includes('equateplus') || lower.includes('computershare')) return 'equateplus';
   if (lower.includes('etoro')) return 'etoro';
   if (lower.includes('degiro')) return 'degiro';
   if (lower.includes('scalable')) return 'scalable';
@@ -1877,6 +2051,11 @@ function doImport(event) {
       else throw new Error('Formato no reconocido');
       // Normalize all transactions
       pendingImportData = data.map(normalizeTx);
+      // Stash planValues and positionSettings if present in the file
+      pendingImportExtra = {
+        planValues: raw.planValues || null,
+        positionSettings: raw.positionSettings || null
+      };
       document.getElementById('import-info').textContent =
         'Archivo: ' + pendingImportData.length + ' transacciones · Actuales: ' + txs.length + ' transacciones';
       document.getElementById('modal-import').classList.add('open');
@@ -1889,23 +2068,24 @@ function doImport(event) {
 function execImport(mode) {
   if (!pendingImportData) return;
   if (mode === 'merge') {
-    // Add new transactions, skip duplicates by id
     const existingIds = new Set(txs.map(t => t.id));
     let added = 0;
     pendingImportData.forEach(t => {
-      if (!existingIds.has(t.id)) {
-        txs.push(t);
-        added++;
-      }
+      if (!existingIds.has(t.id)) { txs.push(t); added++; }
     });
+    if (pendingImportExtra?.planValues) Object.assign(planValues, pendingImportExtra.planValues);
+    if (pendingImportExtra?.positionSettings) Object.assign(positionSettings, pendingImportExtra.positionSettings);
     save();
     toast('✓ Añadidas ' + added + ' transacciones nuevas');
   } else {
     txs = pendingImportData;
+    if (pendingImportExtra?.planValues) planValues = pendingImportExtra.planValues;
+    if (pendingImportExtra?.positionSettings) positionSettings = pendingImportExtra.positionSettings;
     save();
     toast('✓ Reemplazadas con ' + txs.length + ' transacciones');
   }
   pendingImportData = null;
+  pendingImportExtra = null;
   closeModal('modal-import');
   goTo('portfolio');
 }
