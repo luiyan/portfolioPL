@@ -265,6 +265,10 @@ select.form-input { appearance: auto; }
     <button onclick="openPriceUpdate()" style="background:var(--bg3);border:1px solid var(--border2);color:var(--text2);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer">🔄 Precios</button>
   </div>
   <p class="subtitle" id="port-subtitle"></p>
+  <input id="port-search" type="text" placeholder="🔍 Buscar por nombre o ISIN…"
+    style="width:100%;background:var(--bg2);border:1px solid var(--border);color:var(--text);
+    border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:10px;outline:none;"
+    oninput="renderPortfolio()">
   <div class="cards" id="port-cards"></div>
   <div class="filts" id="port-filters"></div>
   <div id="port-list"></div>
@@ -636,6 +640,7 @@ const TYPES = [
   { id:"Bond", label:"Bono" },
   { id:"Fund", label:"Fondo" },
   { id:"Crypto", label:"Crypto" },
+  { id:"Pension", label:"Pensión / bAV" },
   { id:"Other", label:"Otro" }
 ];
 const SECTORS = [
@@ -669,6 +674,8 @@ const ISSUERS = [
   { id:"lyxor", label:"Lyxor" },
   { id:"hsbc", label:"HSBC" },
   { id:"ubs", label:"UBS" },
+  { id:"equateplus", label:"EquatePlus (Computershare)" },
+  { id:"allianz_pze", label:"Allianz PZE / bAV" },
   { id:"na", label:"N/A (Acción / Crypto)" },
   { id:"otro_issuer", label:"Otro" }
 ];
@@ -677,6 +684,7 @@ const STORE_KEY = 'portfolio-v3';
 const PLANS_KEY  = 'portfolio-plans';
 const DISTRIB_KEY   = 'portfolio-distributions';
 const OVERRIDE_KEY  = 'portfolio-pnl-overrides';
+const SETTINGS_KEY  = 'portfolio-settings';
 let txs = [];
 let filterBrokers = new Set(['all']); // 'all' = sin filtro activo
 let editingTxId = null;
@@ -685,6 +693,7 @@ let detailIsin = null;
 let scheduledPlans = {}; // { [positionKey]: { active, scheduledDay, name, type, broker, ... } }
 let distributions = {}; // { [positionKey]: totalEurReceived }
 let pnlOverrides  = {}; // { [positionKey]: { pnl, source, date } }
+let positionSettings = {}; // { [positionKey]: { excludeFromGlobal: bool } }
 
 /* ===== HELPERS ===== */
 const today = () => new Date().toISOString().slice(0, 10);
@@ -696,7 +705,7 @@ const getBroker = id => BROKERS.find(b => b.id === id) || BROKERS[BROKERS.length
 const getContrib = id => CONTRIBS.find(c => c.id === id) || CONTRIBS[3];
 const getSector = id => SECTORS.find(s => s.id === id) || SECTORS[SECTORS.length - 1];
 const getIssuer = id => ISSUERS.find(i => i.id === id) || ISSUERS[ISSUERS.length - 1];
-const typeColors = { ETF: '#3b82f6', Stock: '#fbbf24', Bond: '#10b981', Fund: '#ec4899', Crypto: '#f97316', Other: '#6b7280' };
+const typeColors = { ETF: '#3b82f6', Stock: '#fbbf24', Bond: '#10b981', Fund: '#ec4899', Crypto: '#f97316', Pension: '#8b5cf6', Other: '#6b7280' };
 
 /* ===== STORAGE ===== */
 function save() {
@@ -704,6 +713,7 @@ function save() {
   localStorage.setItem(PLANS_KEY, JSON.stringify(scheduledPlans));
   localStorage.setItem(DISTRIB_KEY, JSON.stringify(distributions));
   localStorage.setItem(OVERRIDE_KEY, JSON.stringify(pnlOverrides));
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(positionSettings));
   if (fbUser) debouncedCloudSave();
 }
 function init() {
@@ -711,6 +721,7 @@ function init() {
   scheduledPlans = JSON.parse(localStorage.getItem(PLANS_KEY) || '{}');
   distributions = JSON.parse(localStorage.getItem(DISTRIB_KEY) || '{}');
   pnlOverrides  = JSON.parse(localStorage.getItem(OVERRIDE_KEY) || '{}');
+  positionSettings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
   checkScheduledPositions();
   renderPortfolio();
   initFirebase();
@@ -838,28 +849,23 @@ function getGroups() {
   const isAll = filterBrokers.has('all');
   let filtered = isAll ? txs : txs.filter(t => filterBrokers.has(t.broker));
 
+  // Apply text search filter
+  const searchTerm = (document.getElementById('port-search')?.value || '').trim().toLowerCase();
+
   const map = {};
   filtered.forEach(tx => {
     const key = tx.isin || tx.id;
     if (!map[key]) {
       map[key] = {
         isin: tx.isin, name: tx.name, type: tx.type,
-        brokers: new Set(), totalCost: 0, totalUnits: 0, currentPrice: 0,
-        contribType: tx.contribType, latestRecurringCost: 0, txs: [], lastDate: ''
+        brokers: new Set(), contribType: tx.contribType,
+        latestRecurringCost: 0, txs: [], lastDate: '',
+        currentPrice: 0, _lastRecDate: ''
       };
     }
     const g = map[key];
     g.brokers.add(tx.broker);
     g.txs.push(tx);
-
-    if (tx.txType === 'sell') {
-      g.totalCost -= tx.cost;
-      g.totalUnits -= (tx.units || 0);
-    } else {
-      g.totalCost += tx.cost;
-      g.totalUnits += (tx.units || 0);
-    }
-
     if (tx.date >= g.lastDate) {
       g.lastDate = tx.date;
       g.currentPrice = tx.currentPrice || 0;
@@ -876,25 +882,62 @@ function getGroups() {
 
   return Object.values(map).map(g => {
     const key = g.isin || g.txs[0]?.id;
+
+    // ── Compute running cost basis (FIFO average) to get realized P&L ──
+    const sortedTxs = [...g.txs].sort((a, b) => a.date.localeCompare(b.date));
+    let runningCost = 0, runningUnits = 0, realizedPnl = 0, totalEmployerSubsidy = 0;
+    for (const tx of sortedTxs) {
+      totalEmployerSubsidy += (tx.employerSubsidy || 0);
+      if (tx.txType === 'sell') {
+        const avgCostPerUnit = runningUnits > 0 ? runningCost / runningUnits : 0;
+        const basisForSold = avgCostPerUnit * (tx.units || 0);
+        realizedPnl += tx.cost - basisForSold; // proceeds - cost basis
+        runningCost = Math.max(0, runningCost - basisForSold);
+        runningUnits = Math.max(0, runningUnits - (tx.units || 0));
+      } else {
+        runningCost += tx.cost;
+        runningUnits += (tx.units || 0);
+      }
+    }
+
+    g.totalCost = runningCost;       // remaining cost basis (open position)
+    g.totalUnits = runningUnits;
+    g.realizedPnl = realizedPnl;
+    g.totalEmployerSubsidy = totalEmployerSubsidy;
+    g.isClosed = runningUnits < 0.000001 && realizedPnl !== 0;
+
     const distrib = distributions[key] || 0;
     const effectiveCost = Math.max(0, g.totalCost - distrib);
-    g.currentValue = g.totalUnits * g.currentPrice;
+
+    // For Pension type: currentValue comes from manual override only
+    const isPension = g.type === 'Pension';
+    g.currentValue = isPension ? effectiveCost : g.totalUnits * g.currentPrice;
+
     const override = pnlOverrides[key];
     if (override) {
-      g.pnl        = override.pnl;
-      g.pnlPct     = effectiveCost > 0 ? (override.pnl / effectiveCost) * 100 : 0;
-      g.currentValue = effectiveCost + override.pnl; // derive from manual P&L
+      g.pnl        = override.pnl + realizedPnl;
+      g.pnlPct     = effectiveCost > 0 ? (g.pnl / (effectiveCost + totalEmployerSubsidy)) * 100 : 0;
+      g.currentValue = effectiveCost + override.pnl;
       g.pnlMode    = 'manual';
     } else {
-      g.pnl        = g.currentValue - effectiveCost;
-      g.pnlPct     = effectiveCost > 0 ? (g.pnl / effectiveCost) * 100 : 0;
+      const unrealized = g.currentValue - effectiveCost;
+      g.pnl        = unrealized + realizedPnl;
+      g.pnlPct     = (effectiveCost + totalEmployerSubsidy) > 0
+        ? (g.pnl / (effectiveCost + totalEmployerSubsidy)) * 100 : 0;
       g.pnlMode    = 'calc';
     }
     g.avgPrice      = g.totalUnits > 0 ? effectiveCost / g.totalUnits : 0;
     g.distributions = distrib;
     g.effectiveCost = effectiveCost;
+    g.excludeFromGlobal = !!(positionSettings[key]?.excludeFromGlobal);
     return g;
-  }).sort((a, b) => b.currentValue - a.currentValue);
+  })
+  .filter(g => {
+    if (!searchTerm) return true;
+    return g.name.toLowerCase().includes(searchTerm) ||
+           (g.isin || '').toLowerCase().includes(searchTerm);
+  })
+  .sort((a, b) => b.currentValue - a.currentValue);
 }
 
 /* ===== PORTFOLIO RENDER ===== */
@@ -903,17 +946,12 @@ function renderPortfolio() {
   const isAll = filterBrokers.has('all');
   const allTxs = isAll ? txs : txs.filter(t => filterBrokers.has(t.broker));
 
-  const totCost = groups.reduce((s, g) => s + g.totalCost, 0);
-  const totCurrent = groups.reduce((s, g) => s + g.currentValue, 0);
-  const totPnl = totCurrent - totCost;
+  // Global totals: exclude positions flagged as excludeFromGlobal
+  const included = groups.filter(g => !g.excludeFromGlobal);
+  const totCost = included.reduce((s, g) => s + g.effectiveCost, 0);
+  const totCurrent = included.reduce((s, g) => s + g.currentValue, 0);
+  const totPnl = included.reduce((s, g) => s + g.pnl, 0);
   const totPnlPct = totCost > 0 ? (totPnl / totCost) * 100 : 0;
-  const totMonthly = allTxs
-    .filter(t => t.contribType === 'mensual' || t.contribType === 'sparplan')
-    .reduce((s, t) => {
-      // Only count latest per ISIN
-      return s;
-    }, 0);
-  // Recalculate monthly from groups
   const monthly = groups
     .filter(g => g.contribType === 'mensual' || g.contribType === 'sparplan')
     .reduce((s, g) => s + g.latestRecurringCost, 0);
@@ -925,13 +963,13 @@ function renderPortfolio() {
     '<div class="card" style="border-left-color:' + (totPnl >= 0 ? 'var(--green)' : 'var(--red)') + '"><span class="card-l">P&L</span><span class="card-v ' + (totPnl >= 0 ? 'up' : 'down') + '">' + (totPnl >= 0 ? '+' : '') + fmt(totPnl) + ' (' + (totPnlPct >= 0 ? '+' : '') + totPnlPct.toFixed(2) + '%)</span></div>' +
     '<div class="card"><span class="card-l">Recurrente / mes</span><span class="card-v sm">' + fmt(monthly) + '</span></div>';
 
-  // Subtitle — show which brokers are active
+  // Subtitle
   const selLabel = isAll
     ? groups.length + ' posiciones · ' + txs.length + ' transacciones'
     : [...filterBrokers].map(b => getBroker(b).label).join(' + ') + ' · ' + groups.length + ' posiciones';
   document.getElementById('port-subtitle').textContent = selLabel;
 
-  // Filters — multi-select broker chips
+  // Filters
   const usedBrokers = [...new Set(txs.map(t => t.broker))];
   let fh = '<button class="filt' + (isAll ? ' on' : '') + '" style="' +
     (isAll ? 'background:var(--accent);color:#fff' : '') +
@@ -963,21 +1001,40 @@ function renderPortfolio() {
     const brokerList = [...g.brokers];
     const brokerColor = brokerList.length === 1 ? getBroker(brokerList[0]).color : 'var(--accent)';
 
+    // Badges
+    const closedBadge = g.isClosed
+      ? '<span style="font-size:9px;background:rgba(16,185,129,0.15);color:#34d399;padding:1px 5px;border-radius:3px;font-weight:700">CERRADO</span> '
+      : '';
+    const excludeBadge = g.excludeFromGlobal
+      ? '<span style="font-size:9px;background:rgba(148,163,184,0.15);color:var(--text3);padding:1px 5px;border-radius:3px">excl.</span> '
+      : '';
+    const pensionBadge = g.type === 'Pension'
+      ? '<span style="font-size:9px;background:rgba(139,92,246,0.2);color:#a78bfa;padding:1px 5px;border-radius:3px;font-weight:700">bAV</span> '
+      : '';
+
+    // Realized P&L info line
+    const realizedInfo = g.realizedPnl !== 0
+      ? '<span style="color:' + (g.realizedPnl >= 0 ? '#34d399' : 'var(--red)') + '">⚡ ' + (g.realizedPnl >= 0 ? '+' : '') + fmt(g.realizedPnl) + ' real.</span>'
+      : '';
+
     html += '<div class="pos-card" onclick="showDetail(\'' + esc(key) + '\')">' +
       '<div class="layer-dot" style="background:' + brokerColor + '"></div>' +
       '<div class="pos-info">' +
-        '<div class="pos-name">' + esc(g.name) +
+        '<div class="pos-name">' + closedBadge + pensionBadge + excludeBadge + esc(g.name) +
           (g.txs.length > 1 ? ' <span class="tx-count">' + g.txs.length + '</span>' : '') +
         '</div>' +
         (g.isin ? '<div class="pos-isin">' + (g.type === 'Crypto' ? '🪙 ' : '') + esc(g.isin) + '</div>' : '') +
         '<div class="pos-meta">' +
           '<span>' + [...g.brokers].map(b => getBroker(b).label).join(', ') + '</span>' +
-          (g.totalUnits ? '<span>' + g.totalUnits.toFixed(6) + ' uds</span>' : '') +
+          (g.totalUnits && !g.isClosed ? '<span>' + g.totalUnits.toFixed(6) + ' uds</span>' : '') +
           (isRec ? '<span style="color:#60a5fa">' + contrib.label + ' ' + fmt(g.latestRecurringCost) + '</span>' : '') +
+          (realizedInfo ? '<span>' + realizedInfo + '</span>' : '') +
         '</div>' +
       '</div>' +
       '<div class="pos-values">' +
-        '<div class="pos-current">' + fmt(g.currentValue) + '</div>' +
+        (g.isClosed
+          ? '<div class="pos-current" style="color:var(--text3);font-size:12px">Cerrado</div>'
+          : '<div class="pos-current">' + fmt(g.currentValue) + '</div>') +
         '<div class="pos-pnl ' + (g.pnl >= 0 ? 'up' : 'down') + '">' +
           (g.pnl >= 0 ? '+' : '') + fmt(g.pnl) + '</div>' +
       '</div>' +
@@ -1009,6 +1066,7 @@ function resetFormData() {
     type: 'ETF', name: '', isin: '', broker: 'trade_republic',
     txType: 'buy', contribType: 'mensual',
     calcMode: 'price', amount: '', avgPrice: '', units: '', currentPrice: '', annualCost: '',
+    employerSubsidy: '',
     sector: 'global', issuer: 'ishares', issuerCustom: '',
     date: today(), notes: '', scheduledDay: null, pending: false
   };
@@ -1113,6 +1171,12 @@ function renderForm(prefill, skipReset) {
   // Annual cost %
   html += '<div class="form-group"><label class="form-label">Coste anual (%) — TER / Annual cost</label><input class="form-input" id="f-annualcost" type="number" step="0.01" value="' + (f.annualCost || '') + '" placeholder="0.22"></div>';
 
+  // Employer subsidy — shown for Pension type or Allianz broker
+  if (f.type === 'Pension' || f.broker === 'allianz') {
+    html += '<div class="form-group"><label class="form-label" style="color:#a78bfa">Subsidio empleador / Arbeitgeberzuschuss (€) <span style="font-size:10px;color:var(--text3)">opcional</span></label>' +
+      '<input class="form-input" id="f-employer-subsidy" type="number" step="0.01" value="' + (f.employerSubsidy || '') + '" placeholder="0.00" style="border-color:rgba(139,92,246,0.3)"></div>';
+  }
+
   // Date (own row)
   html += '<div class="form-group"><label class="form-label">Fecha</label><input class="form-input" id="f-date" type="date" value="' + f.date + '"></div>';
 
@@ -1180,6 +1244,7 @@ function readForm() {
   formData.units = g('f-units') || formData.units || '';
   formData.currentPrice = g('f-curprice') || '';
   formData.annualCost = g('f-annualcost') || '';
+  formData.employerSubsidy = g('f-employer-subsidy') || '';
   formData.sector = g('f-sector') || 'global';
   formData.issuer = g('f-issuer') || 'na';
   formData.issuerCustom = g('f-issuer-custom') || '';
@@ -1229,6 +1294,7 @@ function saveTx() {
     avgPrice: avgPrice,
     currentPrice: currentPrice,
     annualCost: parseFloat(f.annualCost) || 0,
+    employerSubsidy: parseFloat(f.employerSubsidy) || 0,
     sector: f.sector || 'global',
     issuer: f.issuer || 'na',
     issuerCustom: f.issuer === 'otro_issuer' ? f.issuerCustom : '',
@@ -1267,31 +1333,40 @@ function showDetail(isinOrId) {
   const matchTxs = txs.filter(t => (t.isin || t.id) === isinOrId);
   if (!matchTxs.length) return;
 
-  // Build group manually for this ISIN
-  let totalCost = 0, totalUnits = 0, currentPrice = 0, name = '', type = '';
-  const sorted = [...matchTxs].sort((a, b) => b.date.localeCompare(a.date));
-  sorted.forEach(tx => {
+  // Build group with proper cost basis (FIFO average) — same logic as getGroups
+  const sortedForBasis = [...matchTxs].sort((a, b) => a.date.localeCompare(b.date));
+  let runningCost = 0, runningUnits = 0, realizedPnl = 0, totalEmployerSubsidy = 0;
+  for (const tx of sortedForBasis) {
+    totalEmployerSubsidy += (tx.employerSubsidy || 0);
     if (tx.txType === 'sell') {
-      totalCost -= tx.cost;
-      totalUnits -= (tx.units || 0);
+      const avgCostPerUnit = runningUnits > 0 ? runningCost / runningUnits : 0;
+      const basisForSold = avgCostPerUnit * (tx.units || 0);
+      realizedPnl += tx.cost - basisForSold;
+      runningCost = Math.max(0, runningCost - basisForSold);
+      runningUnits = Math.max(0, runningUnits - (tx.units || 0));
     } else {
-      totalCost += tx.cost;
-      totalUnits += (tx.units || 0);
+      runningCost += tx.cost;
+      runningUnits += (tx.units || 0);
     }
-  });
+  }
+  const sorted = [...matchTxs].sort((a, b) => b.date.localeCompare(a.date));
   const latest = sorted[0];
-  name = latest.name; type = latest.type;
-  currentPrice = latest.currentPrice || 0;
+  const name = latest.name; const type = latest.type;
+  const currentPrice = latest.currentPrice || 0;
+  const isPension = type === 'Pension';
+  const isClosed = runningUnits < 0.000001 && realizedPnl !== 0;
+
   const distrib = distributions[isinOrId] || 0;
-  const effectiveCost = Math.max(0, totalCost - distrib);
+  const effectiveCost = Math.max(0, runningCost - distrib);
   const override = pnlOverrides[isinOrId];
-  const pnl        = override ? override.pnl : (totalUnits * currentPrice) - effectiveCost;
-  const currentValue = effectiveCost + pnl; // always consistent: invested + P&L
-  const avgPrice    = totalUnits > 0 ? effectiveCost / totalUnits : 0;
-  const pnlPct      = effectiveCost > 0 ? (pnl / effectiveCost) * 100 : 0;
-  const pnlMode     = override ? 'manual' : 'calc';
+  const currentValue = isPension ? effectiveCost : (runningUnits * currentPrice);
+  const unrealizedPnl = isPension ? (override ? override.pnl : 0) : (currentValue - effectiveCost);
+  const pnl = (override ? override.pnl : unrealizedPnl) + realizedPnl;
+  const totalInvested = effectiveCost + totalEmployerSubsidy;
+  const pnlPct = totalInvested > 0 ? (pnl / totalInvested) * 100 : 0;
+  const pnlMode = override ? 'manual' : 'calc';
+  const avgPrice = runningUnits > 0 ? effectiveCost / runningUnits : 0;
   const detailBrokers = [...new Set(matchTxs.map(t => t.broker))].map(b => getBroker(b).label).join(', ');
-  // Weighted average TER
   const terTxs = matchTxs.filter(t => t.annualCost && t.txType === 'buy');
   const avgTer = terTxs.length > 0 ? terTxs[0].annualCost : null;
 
@@ -1299,12 +1374,13 @@ function showDetail(isinOrId) {
   const planActive = !!plan.active;
   const isRecurringPos = matchTxs.some(t => t.contribType === 'mensual' || t.contribType === 'sparplan');
   const hasScheduledDay = matchTxs.some(t => t.scheduledDay);
+  const isExcluded = !!(positionSettings[isinOrId]?.excludeFromGlobal);
 
   let html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">' +
     '<button class="detail-back" onclick="goTo(\'portfolio\')">← Portfolio</button>' +
     '<div class="detail-actions">' +
       '<button onclick="addToPosition(\'' + esc(isinOrId) + '\')">+ Compra</button>' +
-      '<button onclick="updateGroupPrice(\'' + esc(isinOrId) + '\')">Actualizar precio</button>' +
+      (!isPension ? '<button onclick="updateGroupPrice(\'' + esc(isinOrId) + '\')">Actualizar precio</button>' : '') +
       '<button onclick="updateGroupTer(\'' + esc(isinOrId) + '\')">Actualizar TER</button>' +
       '<button onclick="updateGroupIsin(\'' + esc(isinOrId) + '\')">Actualizar ISIN</button>' +
       '<button onclick="updateDistributions(\'' + esc(isinOrId) + '\')" style="' +
@@ -1313,6 +1389,9 @@ function showDetail(isinOrId) {
       '<button onclick="openPnlOverride(\'' + esc(isinOrId) + '\')" style="' +
         (pnlOverrides[isinOrId] ? 'background:rgba(251,146,60,0.12);color:#fb923c;border-color:rgba(251,146,60,0.3)' : '') +
         '">⚖️ Ajuste P&L</button>' +
+      '<button onclick="toggleExcludeFromGlobal(\'' + esc(isinOrId) + '\')" style="' +
+        (isExcluded ? 'background:rgba(148,163,184,0.12);color:var(--text3);border-color:rgba(148,163,184,0.3)' : '') +
+        '">' + (isExcluded ? '👁 Incluir en total' : '🙈 Excluir del total') + '</button>' +
       (isRecurringPos && hasScheduledDay
         ? '<button onclick="toggleSchedulePlan(\'' + esc(isinOrId) + '\')" style="' +
           (planActive ? 'background:rgba(239,68,68,0.15);color:var(--red);border-color:rgba(239,68,68,0.3)' : 'background:rgba(52,211,153,0.12);color:#34d399;border-color:rgba(52,211,153,0.3)') +
@@ -1320,42 +1399,45 @@ function showDetail(isinOrId) {
         : '') +
     '</div></div>';
 
-  html += '<h2>' + esc(name) + '</h2>';
+  html += '<h2>' + (isPension ? '🏦 ' : '') + esc(name) + (isClosed ? ' <span style="font-size:12px;background:rgba(16,185,129,0.15);color:#34d399;padding:2px 7px;border-radius:4px">CERRADO</span>' : '') + '</h2>';
   if (latest.isin) html += '<p style="font-family:monospace;color:var(--accent2);font-size:12px;margin-bottom:14px">' + (latest.type === 'Crypto' ? 'Ticker: ' : 'ISIN: ') + esc(latest.isin) + '</p>';
 
-  // Summary cards
+  // ── Summary cards ──
   html += '<div class="cards">' +
-    '<div class="card"><span class="card-l">Invertido</span><span class="card-v sm">' + fmt(totalCost) +
+    '<div class="card"><span class="card-l">' + (isPension ? 'Aportado EE' : 'Invertido') + '</span><span class="card-v sm">' + fmt(runningCost) +
       (distrib > 0 ? '<br><span style="font-size:10px;color:#34d399">−' + fmt(distrib) + ' distribuciones<br>Efectivo: ' + fmt(effectiveCost) + '</span>' : '') +
-    '</span></div>' +
-    '<div class="card"><span class="card-l">Valor actual' +
+      (totalEmployerSubsidy > 0 ? '<br><span style="font-size:10px;color:#a78bfa">+' + fmt(totalEmployerSubsidy) + ' empleador</span>' : '') +
+    '</span></div>';
+  if (!isClosed) {
+    html += '<div class="card"><span class="card-l">Valor actual' +
       (pnlMode === 'manual' ? ' <span style="font-size:9px;background:#422006;color:#fb923c;padding:1px 4px;border-radius:3px">⚖️</span>' : '') +
-    '</span><span class="card-v sm">' + fmt(currentValue) + '</span></div>' +
-    '<div class="card" style="border-left-color:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '">' +
-      '<span class="card-l">P&L ' +
-        (pnlMode === 'manual'
-          ? '<span style="font-size:9px;background:#422006;color:#fb923c;padding:1px 5px;border-radius:3px">⚖️ Manual</span>'
-          : (distrib > 0 ? '<span style="font-size:9px;background:#14532d;color:#34d399;padding:1px 4px;border-radius:3px">+dist.</span>' : '')) +
-      '</span>' +
-      '<span class="card-v sm ' + (pnl >= 0 ? 'up' : 'down') + '">' +
-        (pnl >= 0 ? '+' : '') + fmt(pnl) + ' (' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%)' +
-      '</span>' +
-      (pnlMode === 'manual'
-        ? '<div style="margin-top:6px"><button onclick="clearPnlOverride(\'' + esc(isinOrId) + '\')" ' +
-          'style="font-size:10px;background:rgba(239,68,68,0.1);color:var(--red);border:1px solid rgba(239,68,68,0.3);border-radius:5px;padding:3px 8px;cursor:pointer">↺ Recalcular</button></div>'
-        : '') +
-    '</div>' +
-    '<div class="card"><span class="card-l">Info</span><div style="margin-top:4px;font-size:11px;color:var(--text2)">' +
-      '<div>Broker: ' + detailBrokers + '</div>' +
-      (totalUnits ? '<div>Uds: ' + totalUnits.toFixed(6) + ' · P.medio: ' + fmt(avgPrice) + '</div>' : '') +
-      '<div>P.actual: ' + fmt(currentPrice) + '</div>' +
-      (distrib > 0 ? '<div style="color:#34d399">Distribuciones: +' + fmt(distrib) + '</div>' : '') +
-      (avgTer ? '<div>TER: ' + avgTer + '% anual</div>' : '') +
-      '<div>Sector: ' + getSector(latest.sector).label + '</div>' +
-      '<div>Emisor: ' + (latest.issuer === 'otro_issuer' ? esc(latest.issuerCustom || 'Otro') : getIssuer(latest.issuer).label) + '</div>' +
-      (planActive ? '<div style="color:#34d399;margin-top:4px">📅 Auto-programado · día ' + plan.scheduledDay + '</div>' : '') +
-    '</div></div>' +
-  '</div>';
+    '</span><span class="card-v sm">' + fmt(isPension ? (effectiveCost + (override ? override.pnl : 0)) : currentValue) + '</span></div>';
+  }
+  html += '<div class="card" style="border-left-color:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '">' +
+    '<span class="card-l">P&L ' +
+      (pnlMode === 'manual' ? '<span style="font-size:9px;background:#422006;color:#fb923c;padding:1px 5px;border-radius:3px">⚖️ Manual</span>'
+       : distrib > 0 ? '<span style="font-size:9px;background:#14532d;color:#34d399;padding:1px 4px;border-radius:3px">+dist.</span>' : '') +
+    '</span>' +
+    '<span class="card-v sm ' + (pnl >= 0 ? 'up' : 'down') + '">' +
+      (pnl >= 0 ? '+' : '') + fmt(pnl) + ' (' + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%)' +
+    '</span>' +
+    (realizedPnl !== 0 ? '<div style="margin-top:5px;font-size:10px;color:var(--text3)">⚡ Realizado: <span style="color:' + (realizedPnl >= 0 ? '#34d399' : 'var(--red)') + '">' + (realizedPnl >= 0 ? '+' : '') + fmt(realizedPnl) + '</span>' +
+      (pnl !== realizedPnl ? ' · No real.: <span style="color:' + ((pnl-realizedPnl) >= 0 ? '#34d399' : 'var(--red)') + '">' + ((pnl-realizedPnl) >= 0 ? '+' : '') + fmt(pnl-realizedPnl) + '</span>' : '') +
+    '</div>' : '') +
+    (pnlMode === 'manual' ? '<div style="margin-top:6px"><button onclick="clearPnlOverride(\'' + esc(isinOrId) + '\')" style="font-size:10px;background:rgba(239,68,68,0.1);color:var(--red);border:1px solid rgba(239,68,68,0.3);border-radius:5px;padding:3px 8px;cursor:pointer">↺ Recalcular</button></div>' : '') +
+  '</div>' +
+  '<div class="card"><span class="card-l">Info</span><div style="margin-top:4px;font-size:11px;color:var(--text2)">' +
+    '<div>Broker: ' + detailBrokers + '</div>' +
+    (isExcluded ? '<div style="color:var(--text3)">🙈 Excluido del total global</div>' : '') +
+    (runningUnits && !isClosed ? '<div>Uds: ' + runningUnits.toFixed(6) + ' · P.medio: ' + fmt(avgPrice) + '</div>' : '') +
+    (!isClosed && !isPension ? '<div>P.actual: ' + fmt(currentPrice) + '</div>' : '') +
+    (distrib > 0 ? '<div style="color:#34d399">Distribuciones: +' + fmt(distrib) + '</div>' : '') +
+    (totalEmployerSubsidy > 0 ? '<div style="color:#a78bfa">Subsidio empleador: +' + fmt(totalEmployerSubsidy) + '</div>' : '') +
+    (avgTer ? '<div>TER: ' + avgTer + '% anual</div>' : '') +
+    '<div>Sector: ' + getSector(latest.sector).label + '</div>' +
+    '<div>Emisor: ' + (latest.issuer === 'otro_issuer' ? esc(latest.issuerCustom || 'Otro') : getIssuer(latest.issuer).label) + '</div>' +
+    (planActive ? '<div style="color:#34d399;margin-top:4px">📅 Auto-programado · día ' + plan.scheduledDay + '</div>' : '') +
+  '</div></div></div>';
 
   // Transaction list
   html += '<div class="section-title">Transacciones (' + sorted.length + ')</div>';
@@ -1364,6 +1446,7 @@ function showDetail(isinOrId) {
     const contrib = getContrib(tx.contribType);
     const isRec = tx.contribType === 'mensual' || tx.contribType === 'sparplan';
     const bc = isRec ? 'badge-m' : tx.contribType === 'puntual' ? 'badge-p' : 'badge-n';
+    const isSell = tx.txType === 'sell';
 
     const pendingBadge = tx.pending
       ? '<span style="background:#422006;color:#fb923c;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;letter-spacing:0.3px">⏳ PENDIENTE</span>'
@@ -1371,11 +1454,14 @@ function showDetail(isinOrId) {
     const schedInfo = tx.scheduledDay
       ? '<span style="font-size:10px;color:var(--text3)"> · Día ' + tx.scheduledDay + ' del mes</span>'
       : '';
+    const erInfo = tx.employerSubsidy > 0
+      ? '<span style="font-size:10px;color:#a78bfa"> · ER: +' + fmt(tx.employerSubsidy) + '</span>'
+      : '';
 
     html += '<div class="tx-item">' +
       '<div class="tx-left">' +
         '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:3px">' +
-          '<span class="tx-type-tag ' + tx.txType + '">' + (tx.txType === 'buy' ? 'Compra' : 'Venta') + '</span>' +
+          '<span class="tx-type-tag ' + tx.txType + '">' + (isSell ? 'Venta' : 'Compra') + '</span>' +
           '<span style="font-size:11px;color:var(--text3)">' + tx.date + '</span>' +
           '<span class="badge ' + bc + '">' + contrib.label + '</span>' +
           pendingBadge +
@@ -1385,12 +1471,12 @@ function showDetail(isinOrId) {
           : (tx.units ? '<div style="font-size:11px;color:var(--text2)">' + tx.units.toFixed(6) + ' uds × ' + fmt(tx.avgPrice) + '</div>' : '')) +
         '<div style="font-size:11px;color:var(--text3)">' + getBroker(tx.broker).label +
           (tx.annualCost ? ' · TER: ' + tx.annualCost + '%' : '') +
-          schedInfo +
+          schedInfo + erInfo +
           (tx.notes ? ' · ' + esc(tx.notes) : '') + '</div>' +
       '</div>' +
       '<div class="tx-right">' +
-        '<div style="font-size:14px;font-weight:700;color:' + (tx.pending ? '#fb923c' : 'inherit') + '">' +
-          (tx.pending && tx.cost === 0 ? '—' : fmt(tx.cost)) +
+        '<div style="font-size:14px;font-weight:700;color:' + (isSell ? 'var(--green)' : tx.pending ? '#fb923c' : 'inherit') + '">' +
+          (isSell ? '↗ ' : '') + (tx.pending && tx.cost === 0 ? '—' : fmt(tx.cost)) +
         '</div>' +
       '</div>' +
       '<div class="tx-actions">' +
@@ -1639,6 +1725,7 @@ function editTx(id) {
     calcMode: tx.type === 'Crypto' ? 'units' : 'price',
     amount: tx.cost || '', avgPrice: tx.avgPrice || '', units: tx.units || '',
     currentPrice: tx.currentPrice || '', annualCost: tx.annualCost || '',
+    employerSubsidy: tx.employerSubsidy || '',
     sector: tx.sector || 'global', issuer: tx.issuer || 'na', issuerCustom: tx.issuerCustom || '',
     date: tx.date, notes: tx.notes || '',
     scheduledDay: tx.scheduledDay || null, pending: !!tx.pending
@@ -1678,6 +1765,16 @@ function deleteTx(id) {
 }
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function toggleExcludeFromGlobal(isinOrId) {
+  if (!positionSettings[isinOrId]) positionSettings[isinOrId] = {};
+  positionSettings[isinOrId].excludeFromGlobal = !positionSettings[isinOrId].excludeFromGlobal;
+  save();
+  const isExcluded = positionSettings[isinOrId].excludeFromGlobal;
+  toast(isExcluded ? '🙈 Excluida del total global' : '👁 Incluida en el total global');
+  showDetail(isinOrId);
+  renderPortfolio();
+}
 
 /* ===== IMPORT / EXPORT ===== */
 async function doExport(format) {
@@ -1735,6 +1832,7 @@ function normalizeTx(t) {
     avgPrice: t.avgPrice || t.price || 0,
     currentPrice: t.currentPrice || t.price || 0,
     annualCost: t.annualCost || 0,
+    employerSubsidy: t.employerSubsidy || 0,
     sector: t.sector || 'global',
     issuer: t.issuer || 'na',
     issuerCustom: t.issuerCustom || '',
@@ -1977,18 +2075,27 @@ function openPriceUpdate() {
 
 // ── MEJORA 3: Auto-buscar ticker por ISIN vía Yahoo Finance ────────────────
 async function searchYahooTicker(isin) {
-  const proxy = 'https://corsproxy.io/?url=';
-  const target = encodeURIComponent(
-    'https://query2.finance.yahoo.com/v1/finance/search?q=' + isin + '&quotesCount=3&newsCount=0&listsCount=0'
-  );
-  const resp = await fetch(proxy + target);
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  const data = await resp.json();
-  const quotes = data?.quotes || [];
-  // Prefer equity/ETF matches; skip mutual funds (MUTUALFUND often = wrong match)
-  const best = quotes.find(q => q.quoteType && q.quoteType !== 'MUTUALFUND' && q.symbol) || quotes[0];
-  if (!best?.symbol) throw new Error('No encontrado');
-  return best.symbol;
+  let lastError;
+  for (const host of YAHOO_HOSTS) {
+    const baseUrl = 'https://' + host + '/v1/finance/search?q=' + isin + '&quotesCount=3&newsCount=0&listsCount=0';
+    for (const makeProxy of YAHOO_PROXIES) {
+      try {
+        const resp = await fetch(makeProxy(baseUrl));
+        if (!resp.ok) { lastError = new Error('HTTP ' + resp.status); continue; }
+        const text = await resp.text();
+        let data;
+        try { data = JSON.parse(text); } catch {
+          const wrapper = JSON.parse(text);
+          data = JSON.parse(wrapper.contents || '{}');
+        }
+        const quotes = data?.quotes || [];
+        const best = quotes.find(q => q.quoteType && q.quoteType !== 'MUTUALFUND' && q.symbol) || quotes[0];
+        if (!best?.symbol) { lastError = new Error('No encontrado'); continue; }
+        return best.symbol;
+      } catch (e) { lastError = e; }
+    }
+  }
+  throw lastError || new Error('No encontrado');
 }
 
 async function autoSearchTickers() {
@@ -2032,21 +2139,35 @@ async function autoSearchTickers() {
 // ── FX cache: evita fetch repetido para la misma moneda ───────────────────
 const fxRateCache = {}; // { 'USD': 0.924, 'GBP': 1.172, ... }
 
+// ── Multi-proxy fallback for Yahoo Finance (avoid 403 blocks) ─────────────
+const YAHOO_PROXIES = [
+  u => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
+  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+];
+const YAHOO_HOSTS = ['query2.finance.yahoo.com', 'query1.finance.yahoo.com'];
+
 async function yahooRaw(ticker) {
-  // Devuelve { price, currency } sin conversión
-  const proxy = 'https://corsproxy.io/?url=';
-  const target = encodeURIComponent(
-    'https://query1.finance.yahoo.com/v8/finance/chart/' + ticker + '?interval=1d&range=1d'
-  );
-  const resp = await fetch(proxy + target);
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  const data = await resp.json();
-  const meta = data?.chart?.result?.[0]?.meta;
-  if (!meta?.regularMarketPrice) throw new Error('Sin precio');
-  return {
-    price: meta.regularMarketPrice,
-    currency: (meta.currency || 'USD').toUpperCase()
-  };
+  let lastError;
+  for (const host of YAHOO_HOSTS) {
+    const baseUrl = 'https://' + host + '/v8/finance/chart/' + ticker + '?interval=1d&range=1d';
+    for (const makeProxy of YAHOO_PROXIES) {
+      try {
+        const resp = await fetch(makeProxy(baseUrl));
+        if (!resp.ok) { lastError = new Error('HTTP ' + resp.status); continue; }
+        const text = await resp.text();
+        let data;
+        try { data = JSON.parse(text); } catch {
+          // allorigins sometimes wraps in {contents: "..."}
+          const wrapper = JSON.parse(text);
+          data = JSON.parse(wrapper.contents || '{}');
+        }
+        const meta = data?.chart?.result?.[0]?.meta;
+        if (!meta?.regularMarketPrice) { lastError = new Error('Sin precio'); continue; }
+        return { price: meta.regularMarketPrice, currency: (meta.currency || 'USD').toUpperCase() };
+      } catch (e) { lastError = e; }
+    }
+  }
+  throw lastError || new Error('No se pudo obtener precio');
 }
 
 async function getEurRate(currency) {
